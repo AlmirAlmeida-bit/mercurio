@@ -36,6 +36,7 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npx electron-builder ${{ matrix.args }} -c.directories.output=dist/${{ matrix.platform }} --publish never
+        shell: bash # no Windows o PowerShell quebraria o "-c.directories.output"
       - uses: actions/upload-artifact@v4
         with:
           name: mercurio-${{ matrix.platform }}
