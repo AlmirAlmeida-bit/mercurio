@@ -1,0 +1,104 @@
+const { cmd, onState, onFocusUrl } = window.mercurio;
+const $ = id => document.getElementById(id);
+const url = $('url');
+const X = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>'; // ícone estático, nunca dado de página
+
+for (const id of ['back', 'forward', 'reload', 'home', 'panel']) $(id).onclick = () => cmd(id);
+$('star').onclick = () => cmd('bookmark');
+$('plus').onclick = () => cmd('newTab');
+$('allow').onclick = () => cmd('permission', true);
+$('deny').onclick = () => cmd('permission', false);
+url.onkeydown = e => {
+  if (e.key === 'Enter' && url.value.trim()) { cmd('go', url.value); url.blur(); }
+  if (e.key === 'Escape') url.blur();
+};
+url.onfocus = () => url.select();
+onFocusUrl(() => url.focus());
+
+// Barra de favoritos: clique abre aqui, botão do meio abre em nova aba, direito = menu.
+// O que não couber vai para o menu "»".
+let lastBookmarks = '';
+function renderBookmarks(list) {
+  const bar = $('bookmarks'), more = $('bm-more');
+  const key = JSON.stringify(list);
+  if (key === lastBookmarks) return; // evita redesenhar a cada evento de carregamento
+  lastBookmarks = key;
+  bar.hidden = !list.length;
+  bar.replaceChildren(...list.map(b => {
+    const el = document.createElement('button');
+    el.className = 'bm';
+    el.title = `${b.title}\n${b.url}`;
+    const icon = document.createElement(b.favicon ? 'img' : 'i');
+    if (b.favicon) { icon.src = b.favicon; icon.alt = ''; icon.onerror = () => icon.replaceWith(document.createElement('i')); }
+    const title = document.createElement('span');
+    title.textContent = b.title;
+    el.append(icon, title);
+    el.onclick = () => cmd('open', b.url);
+    el.onauxclick = e => e.button === 1 && cmd('openTab', b.url);
+    el.oncontextmenu = e => { e.preventDefault(); cmd('bookmarkMenu', b.url); };
+    return el;
+  }), more);
+  fitBookmarks();
+}
+function fitBookmarks() {
+  const bar = $('bookmarks'), more = $('bm-more');
+  const chips = [...bar.querySelectorAll('.bm')];
+  chips.forEach(c => (c.hidden = false));
+  more.hidden = true;
+  const limit = bar.clientWidth - 40; // espaço do botão »
+  let used = 0, first = -1;
+  chips.forEach((c, i) => {
+    used += c.offsetWidth + 2;
+    if (used > limit && first < 0) first = i;
+    if (first >= 0) c.hidden = true;
+  });
+  if (first >= 0) { more.hidden = false; more.onclick = () => cmd('bookmarksOverflow', first); }
+}
+addEventListener('resize', fitBookmarks);
+
+onState(s => {
+  applyAccent(s.accent);
+  $('tabs').replaceChildren(...s.tabs.map((t, i) => {
+    const el = document.createElement('div');
+    el.className = 'tab' + (i === s.active ? ' on' : '');
+    el.setAttribute('role', 'tab');
+    el.setAttribute('aria-selected', i === s.active);
+    el.title = t.title;
+    el.onmousedown = e => e.button === 0 && cmd('select', i);
+    el.onauxclick = e => e.button === 1 && cmd('close', i);
+
+    let icon = document.createElement(t.loading ? 'i' : t.favicon ? 'img' : 'i');
+    icon.className = t.loading ? 'spin' : t.favicon ? '' : 'dot';
+    if (t.panel) { icon = document.createElement('img'); icon.src = 'assets/logo.png'; icon.className = ''; }
+    else if (!t.loading && t.favicon) { icon.src = t.favicon; icon.onerror = () => icon.replaceWith(Object.assign(document.createElement('i'), { className: 'dot' })); }
+
+    const title = document.createElement('span');
+    title.textContent = t.title; // textContent: título da página nunca vira HTML
+    const x = document.createElement('button');
+    x.innerHTML = X;
+    x.setAttribute('aria-label', 'Fechar aba');
+    x.onmousedown = e => e.stopPropagation();
+    x.onclick = () => cmd('close', i);
+    el.append(icon, title, x);
+    return el;
+  }));
+
+  $('back').disabled = !s.canBack;
+  $('forward').disabled = !s.canForward;
+  if (document.activeElement !== url) url.value = s.url;
+  const insecure = s.url.startsWith('http://');
+  $('insecure').hidden = !insecure;
+  $('lock').style.display = s.url.startsWith('https://') ? '' : 'none';
+  $('star').disabled = !s.bookmarkable;
+  $('star').setAttribute('aria-pressed', s.bookmarked);
+  $('star').title = !s.bookmarkable ? 'Abra um site para favoritar'
+    : s.bookmarked ? 'Remover dos favoritos (Ctrl+D)' : 'Favoritar (Ctrl+D)';
+
+  renderBookmarks(s.bookmarks);
+
+  $('prompt').hidden = !s.prompt;
+  if (s.prompt) {
+    $('p-origin').textContent = s.prompt.origin.replace(/^https?:\/\//, '');
+    $('p-label').textContent = s.prompt.label;
+  }
+});

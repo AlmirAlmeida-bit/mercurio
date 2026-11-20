@@ -1,0 +1,163 @@
+const call = (name, arg) => window.painel.call(name, arg);
+const view = document.getElementById('view');
+const X = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>'; // ícone estático
+const PERMS = {
+  media: 'Câmera e microfone', geolocation: 'Localização', notifications: 'Notificações',
+  'clipboard-read': 'Área de transferência', midiSysex: 'Dispositivos MIDI',
+};
+
+let d;          // dados vindos do navegador
+let q = '';     // texto da busca
+let limit = 200;
+let list;       // função que desenha a lista da seção atual
+
+// Monta elementos sem innerHTML: dados de páginas nunca viram HTML.
+function h(tag, props = {}, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k.startsWith('on')) el[k] = v;
+    else if (k === 'class') el.className = v;
+    else el.setAttribute(k, v);
+  }
+  el.append(...kids.flat().filter(k => k != null && k !== false));
+  return el;
+}
+const xButton = (label, onclick) => { const b = h('button', { class: 'x', 'aria-label': label, title: label, onclick }); b.innerHTML = X; return b; };
+const host = u => { try { return new URL(u).host; } catch { return u; } };
+const match = (...s) => !q || s.some(v => v?.toLowerCase().includes(q));
+const act = async (name, arg) => { d = await call(name, arg); list?.(); };
+
+function searchBox(placeholder) {
+  return h('input', { class: 'search', type: 'search', placeholder, 'aria-label': placeholder, value: q,
+    oninput: e => { q = e.target.value.trim().toLowerCase(); limit = 200; list(); } });
+}
+
+const sections = {
+  favoritos() {
+    const box = h('div');
+    list = () => {
+      const items = d.bookmarks.filter(b => match(b.title, b.url));
+      box.replaceChildren(items.length
+        ? h('div', { class: 'list' }, items.map(b => h('div', { class: 'row' },
+            h('a', { class: 'main', href: b.url, target: '_blank' }, h('div', { class: 't' }, b.title), h('div', { class: 'u' }, b.url)),
+            xButton('Remover dos favoritos', () => act('removeBookmark', b.url)))))
+        : h('div', { class: 'list' }, h('div', { class: 'empty' },
+            q ? 'Nenhum favorito encontrado.' : 'Nenhum favorito ainda. Use a estrela na barra de endereço (Ctrl+D).')));
+    };
+    return [h('h1', {}, 'Favoritos'), h('p', { class: 'sub' }, 'As páginas que você guardou.'),
+      h('div', { class: 'tools' }, searchBox('Buscar nos favoritos')), box];
+  },
+
+  historico() {
+    const box = h('div');
+    list = () => {
+      const items = d.history.filter(x => match(x.title, x.url));
+      const today = new Date().toDateString();
+      const yesterday = new Date(Date.now() - 864e5).toDateString();
+      const groups = new Map();
+      for (const x of items.slice(0, limit)) {
+        const day = new Date(x.t).toDateString();
+        const label = day === today ? 'Hoje' : day === yesterday ? 'Ontem'
+          : new Date(x.t).toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
+        if (!groups.has(label)) groups.set(label, []);
+        groups.get(label).push(x);
+      }
+      box.replaceChildren(...(items.length ? [...groups].map(([label, xs]) => [h('h2', {}, label),
+        h('div', { class: 'list' }, xs.map(x => h('div', { class: 'row' },
+          h('time', {}, new Date(x.t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })),
+          h('a', { class: 'main', href: x.url, target: '_blank' }, h('div', { class: 't' }, x.title || host(x.url)), h('div', { class: 'u' }, host(x.url))),
+          xButton('Remover do histórico', () => act('removeHistory', x.t)))))]).flat()
+        : [h('div', { class: 'list' }, h('div', { class: 'empty' }, q ? 'Nada encontrado no histórico.' : 'Seu histórico está vazio.'))]),
+        items.length > limit ? h('button', { class: 'btn', style: 'margin:16px auto;display:block', onclick: () => { limit += 300; list(); } }, 'Mostrar mais') : null);
+    };
+    return [h('h1', {}, 'Histórico'), h('p', { class: 'sub' }, 'Os sites que você visitou.'),
+      h('div', { class: 'tools' }, searchBox('Buscar no histórico'),
+        h('button', { class: 'btn danger', onclick: () => confirm('Apagar todo o histórico?') && act('clearHistory') }, 'Limpar histórico')),
+      box];
+  },
+
+  extensoes() {
+    const box = h('div');
+    list = () => {
+      box.replaceChildren(h('div', { class: 'list' }, d.extensions.length
+        ? d.extensions.map(x => h('div', { class: 'row' },
+            h('div', { class: 'ico' }, x.icon ? h('img', { src: x.icon, alt: '' }) : null),
+            h('div', { class: 'main' }, h('div', { class: 't' }, x.name), h('div', { class: 'u' }, `Versão ${x.version}${x.description ? ' · ' + x.description : ''}`)),
+            h('button', { class: 'act', onclick: () => confirm(`Remover "${x.name}"?`) && act('uninstall', x.id) }, 'Remover')))
+        : h('div', { class: 'empty' }, 'Nenhuma extensão instalada.')));
+    };
+    return [h('h1', {}, 'Extensões'), h('p', { class: 'sub' }, 'Extensões da Chrome Web Store funcionam no Mercurio.'),
+      h('div', { class: 'tools' }, h('button', { class: 'btn primary', onclick: () => call('store') }, 'Adicionar da Chrome Web Store')),
+      box];
+  },
+
+  preferencias() {
+    const seg = (key, options) => h('div', { class: 'seg', role: 'group' }, Object.entries(options).map(([value, label]) =>
+      h('button', { 'aria-pressed': d.prefs[key] === value, onclick: async () => { d = await call('setPref', { key, value }); render(); } }, label)));
+    const perms = h('div');
+    const done = h('span', { class: 'ok' });
+    list = () => {
+      perms.replaceChildren(h('div', { class: 'list' }, d.permissions.length
+        ? d.permissions.map(p => h('div', { class: 'row' },
+            h('div', { class: 'main' }, h('div', { class: 't' }, host(p.origin)),
+              h('div', { class: 'u' }, `${PERMS[p.perm] ?? p.perm} · ${p.allow ? 'Permitido' : 'Bloqueado'}`)),
+            h('button', { class: 'act', onclick: () => act('revoke', { origin: p.origin, perm: p.perm }) }, 'Revogar')))
+        : h('div', { class: 'empty' }, 'Nenhum site com permissão salva.')));
+    };
+    return [h('h1', {}, 'Preferências'), h('p', { class: 'sub' }, 'Ajuste o Mercurio do seu jeito.'),
+      h('h2', {}, 'Geral'),
+      h('div', { class: 'list' },
+        h('div', { class: 'setting' }, h('div', {}, 'Mecanismo de busca', h('p', {}, 'Usado na barra de endereço e na nova aba.')), seg('search', d.engines)),
+        h('div', { class: 'setting' }, h('div', {}, 'Barra de favoritos', h('p', {}, 'Seus favoritos em guias abaixo da barra de endereço (Ctrl+Shift+B).')),
+          seg('bookmarksBar', { show: 'Mostrar', hide: 'Ocultar' })),
+        h('div', { class: 'setting' }, h('div', {}, 'Tema'), seg('theme', { system: 'Sistema', dark: 'Escuro', light: 'Claro' })),
+        h('div', { class: 'setting' }, h('div', {}, 'Cor de destaque', h('p', {}, 'Abas, botões, estrela e foco.')), swatches())),
+      h('h2', {}, 'Permissões dos sites'), perms,
+      h('h2', {}, 'Privacidade'),
+      h('div', { class: 'list' }, h('div', { class: 'setting' },
+        h('div', {}, 'Limpar cookies e cache', h('p', {}, 'Você sairá das contas nos sites.')),
+        h('div', {}, done, ' ', h('button', { class: 'btn danger', onclick: async () => {
+          if (!confirm('Apagar cookies, cache e dados dos sites?')) return;
+          await call('clearData'); done.textContent = 'Feito ✓';
+        } }, 'Limpar')))),
+      h('h2', {}, 'Sobre'),
+      h('div', { class: 'list' }, h('div', { class: 'about' }, h('img', { src: 'assets/logo.png', alt: '' }),
+        h('div', {}, h('div', {}, `Mercurio ${d.version}`),
+          h('p', { class: 'u', style: 'margin:4px 0 0;color:var(--dim)' }, `© ${new Date().getFullYear()} TresTech. Todos os direitos reservados. `,
+            h('a', { href: 'https://trestech.com.br', target: '_blank' }, 'trestech.com.br'))))),
+    ];
+  },
+};
+
+// Cores prontas (as do logo primeiro) + uma livre pelo seletor nativo.
+const ACCENTS = {
+  default: 'Prata', '#f2b33d': 'Ouro', '#2fa8ff': 'Azul', '#ff7a2f': 'Laranja',
+  '#2ec27e': 'Esmeralda', '#9b7bff': 'Violeta', '#ff5d8f': 'Rosa',
+};
+function swatches() {
+  const pick = async value => { d = await call('setPref', { key: 'accent', value }); render(); };
+  const current = d.prefs.accent;
+  const custom = current !== 'default' && !ACCENTS[current];
+  return h('div', { class: 'swatches', role: 'radiogroup', 'aria-label': 'Cor de destaque' },
+    Object.entries(ACCENTS).map(([value, name]) => h('button', {
+      class: 'sw', role: 'radio', title: name, 'aria-label': name, 'aria-checked': current === value,
+      style: `--c:${value === 'default' ? 'linear-gradient(135deg,#fff,#9aa0ab)' : value}`, onclick: () => pick(value),
+    })),
+    h('label', { class: 'sw custom', title: 'Outra cor', 'aria-checked': custom, style: custom ? `--c:${current}` : '' },
+      h('input', { type: 'color', 'aria-label': 'Escolher outra cor', value: custom ? current : '#c9ced6', onchange: e => pick(e.target.value) })));
+}
+
+function render() {
+  applyAccent(d.prefs.accent);
+  const name = sections[location.hash.slice(1)] ? location.hash.slice(1) : 'favoritos';
+  for (const a of document.querySelectorAll('nav a')) a.removeAttribute('aria-current');
+  document.querySelector(`nav a[href="#${name}"]`).setAttribute('aria-current', 'page');
+  view.replaceChildren(...sections[name]());
+  list();
+}
+
+async function refresh() { d = await call('get'); render(); }
+
+addEventListener('hashchange', () => { q = ''; limit = 200; render(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+refresh();

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; img-src 'self'; style-src 'unsafe-inline'; form-action https://duckduckgo.com https://www.google.com https://www.bing.com https://search.brave.com">
+<title>Nova aba</title>
+<style>
+  :root { --bg: #0f1013; --glow: #1d1f25; --fg: #e8e9ec; --dim: #7d808a; --field: #17181c; --line: #2a2c33; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #eceef1; --glow: #ffffff; --fg: #1a1b1f; --dim: #6b6f78; --field: #ffffff; --line: #d6d9df; }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { display: grid; place-items: center; background: radial-gradient(ellipse at 50% 30%, var(--glow), var(--bg) 60%);
+         color: var(--fg); font: 15px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; }
+  main { display: flex; flex-direction: column; align-items: center; width: min(560px, 100% - 32px); margin-top: -4vh; }
+  img { width: min(260px, 34vh); height: auto; aspect-ratio: 1; }
+  h1 { margin: 4px 0 32px; font: 300 22px "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+       letter-spacing: .42em; text-indent: .42em; text-transform: lowercase; color: var(--dim); }
+  form { width: 100%; }
+  input { width: 100%; height: 48px; padding: 0 22px; border: 1px solid var(--line); border-radius: 24px;
+          background: var(--field); color: var(--fg); font: inherit; outline: none; transition: border-color .15s; }
+  input:focus { border-color: var(--accent, #9aa0ab); }
+  input::placeholder { color: var(--dim); }
+</style>
+</head>
+<body>
+  <main>
+    <img src="assets/logo.png" alt="">
+    <h1>Mercurio</h1>
+    <form action="https://duckduckgo.com/" method="get" role="search">
+      <input name="q" autofocus autocomplete="off" placeholder="Pesquisar na web" aria-label="Pesquisar na web">
+    </form>
+  </main>
+  <script src="accent.js"></script>
+  <script src="home.js"></script>
+</body>
+</html>

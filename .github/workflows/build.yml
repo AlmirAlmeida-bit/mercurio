@@ -1,0 +1,62 @@
+# Gera os instaladores do Mercurio para Windows, Linux e Mac.
+# - Manualmente: aba Actions > Build > Run workflow (os arquivos ficam em "Artifacts").
+# - Ao criar uma tag v* (ex.: v0.2.0): além disso publica um Release com todos os arquivos.
+name: Build
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+            args: --win
+          - os: ubuntu-latest
+            platform: linux
+            args: --linux
+          - os: macos-latest
+            platform: mac
+            args: --mac --x64 --arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npx electron-builder ${{ matrix.args }} -c.directories.output=dist/${{ matrix.platform }} --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mercurio-${{ matrix.platform }}
+          if-no-files-found: error
+          path: |
+            dist/${{ matrix.platform }}/*.exe
+            dist/${{ matrix.platform }}/*.dmg
+            dist/${{ matrix.platform }}/*.zip
+            dist/${{ matrix.platform }}/*.AppImage
+            dist/${{ matrix.platform }}/*.deb
+            dist/${{ matrix.platform }}/*.tar.gz
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*

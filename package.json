@@ -1,0 +1,39 @@
+{
+  "name": "mercurio",
+  "productName": "Mercurio",
+  "version": "0.1.0",
+  "description": "Navegador rápido, seguro e compatível com extensões Chrome",
+  "author": { "name": "TresTech", "url": "https://trestech.com.br" },
+  "homepage": "https://trestech.com.br",
+  "main": "main.js",
+  "desktopName": "mercurio.desktop",
+  "scripts": {
+    "start": "electron .",
+    "test": "node url.js",
+    "icon": "electron scripts/icon.js",
+    "dist": "npm run dist:win && npm run dist:linux && npm run dist:mac",
+    "dist:win": "electron-builder --win -c.directories.output=dist/windows",
+    "dist:linux": "electron-builder --linux tar.gz -c.directories.output=dist/linux",
+    "dist:mac": "electron-builder --mac -c.directories.output=dist/mac"
+  },
+  "build": {
+    "appId": "app.mercurio.browser",
+    "productName": "Mercurio",
+    "copyright": "© 2026 TresTech",
+    "files": ["main.js", "preload.js", "url.js", "ui.html", "ui.js", "home.html", "home.js", "accent.js", "panel.html", "panel.js", "panel-preload.js", "assets/**"],
+    "compression": "maximum",
+    "directories": { "output": "dist" },
+    "win": { "target": "nsis", "icon": "assets/icon.png" },
+    "linux": { "target": ["AppImage", "deb", "tar.gz"], "icon": "assets/icon.png", "category": "Network;WebBrowser", "syncDesktopName": true, "maintainer": "TresTech <https://trestech.com.br>" },
+    "mac": { "target": ["dmg", "zip"], "icon": "assets/icon.png", "category": "public.app-category.productivity", "identity": "-" },
+    "nsis": { "oneClick": true, "shortcutName": "Mercurio" }
+  },
+  "devDependencies": {
+    "electron": "^45.4.1",
+    "electron-builder": "^26.18.0"
+  },
+  "dependencies": {
+    "electron-chrome-extensions": "^4.10.0",
+    "electron-chrome-web-store": "^0.13.0"
+  }
+}
