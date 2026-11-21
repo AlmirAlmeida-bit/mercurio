@@ -2,10 +2,17 @@
 // e volta sozinha para o site quando a conexão retorna.
 
 // ---- volta para o site quando a internet voltar ----
+// Não usa navigator.onLine (adaptadores virtuais o deixam sempre "online"): tenta alcançar o site de verdade.
 const target = new URLSearchParams(location.search).get('u') ?? '';
-const backOnline = () => { if (/^https?:\/\//.test(target)) location.replace(target); }; // só http/https
-addEventListener('online', backOnline);
-setInterval(() => navigator.onLine && backOnline(), 5000);
+async function tryBack() {
+  if (!/^https?:\/\//.test(target)) return; // só http/https
+  try {
+    await fetch(target, { mode: 'no-cors', cache: 'no-store', signal: AbortSignal.timeout(4000) });
+    location.replace(target);
+  } catch { /* ainda sem internet */ }
+}
+addEventListener('online', tryBack);
+setInterval(tryBack, 5000);
 
 // ---- jogo ----
 const canvas = document.getElementById('game');

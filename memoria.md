@@ -27,7 +27,7 @@ Usa **Electron 45** (motor Chromium 156), é compatível com extensões da Chrom
 | Cápsulas | Abas + sessão própria (`persist:capsula-<id>`) + anotações, com nome. Pausar fecha as abas (libera memória) e guarda as URLs; retomar reabre já logado; excluir apaga os dados. Ao fechar o navegador, as cápsulas voltam pausadas. Painel → Cápsulas |
 | Snapshots | Retrato das abas (Principal + cápsulas, nunca a efêmera). Manual, a cada 10 min se algo mudou, e ao fechar. Limite 10/20/50/100 (Preferências). Restaurar abre ao lado. Painel → Snapshots |
 | Sessão efêmera | `Ctrl+Shift+N`. Sessão só em memória, sem extensões nem histórico; página Auditoria (`mercurio://auditoria`) mostra navegações e requisições ao vivo (até 2.000), com Exportar JSON. Encerrar apaga abas, cookies, cache e o registro |
-| Sem internet | Quando uma página falha por falta de internet (`ERR_INTERNET_DISCONNECTED` ou `net.isOnline()` falso), a aba mostra `offline.html`: "Enquanto sua internet não volta, aproveite" + jogo original (gota de mercúrio alada pulando torres e nuvens; espaço/↑/clique; recorde salvo). A barra mostra o site original e a página volta sozinha quando a conexão retorna |
+| Sem internet | Quando uma página falha com erro de rede e um teste real de conexão (`lib/connectivity.js`: abre endereços de verificação da Microsoft/Google/Cloudflare, 2,5 s) confirma que não há internet, a aba mostra `offline.html`: "Enquanto sua internet não volta, aproveite" + jogo original (gota de mercúrio alada pulando torres e nuvens; espaço/↑/clique; recorde salvo). A barra mostra o site original e a página volta sozinha quando a conexão retorna |
 | Preferências | Buscador (DuckDuckGo, Google, Bing, Brave), tema (sistema/escuro/claro), **cor de destaque**, limpar cookies/cache |
 | Aviso de direitos | Janela "© TresTech" com link para o site, na 1ª abertura **após cada instalação** |
 | Licenças | `THIRD-PARTY-NOTICES.txt` abre por Painel → Preferências → Sobre → "Licenças de terceiros" |
@@ -98,6 +98,7 @@ npm run dist:mac     # Mac .dmg/.zip       -> dist/mac/   (só num Mac)
 - No Windows, o `AppImage` e o `.deb` do Linux não saem (precisam do GitHub Actions ou de um Linux).
 - Downloads grandes de Artifacts pelo `gh` caíram várias vezes; pelo navegador é mais estável.
 - Às vezes o Windows (antivírus) trava `dist\windows\win-unpacked` e o build falha com `EBUSY`. Solução: gerar em outra pasta (`npx electron-builder --win -c.directories.output=<pasta>`) e copiar o `.exe`.
+- **Não confiar em `net.isOnline()` / `navigator.onLine`:** com adaptadores virtuais sempre ligados (Hyper-V "vEthernet", WSL, VPN, Docker) o Windows diz "online" sem Wi-Fi, e o erro vira "endereço não encontrado". Por isso o jogo offline usa teste real de conexão. Para testar sem desligar o Wi-Fi: abrir com `"--host-resolver-rules=MAP * ~NOTFOUND"` (entre aspas) e um perfil novo (o cache serve páginas já visitadas).
 - Extensões só funcionam no contexto Principal (a biblioteca é ligada à sessão padrão). Decisão de 21/11/2026.
 
 ## Pendências

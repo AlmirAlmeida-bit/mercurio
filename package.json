@@ -9,7 +9,7 @@
   "desktopName": "mercurio.desktop",
   "scripts": {
     "start": "electron .",
-    "test": "node url.js && node lib/snapshots.test.js",
+    "test": "node url.js && node lib/snapshots.test.js && node lib/connectivity.js",
     "icon": "electron scripts/icon.js",
     "notices": "node scripts/notices.js",
     "dist": "npm run dist:win && npm run dist:linux && npm run dist:mac",

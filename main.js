@@ -52,6 +52,7 @@ const ctxs = require('./lib/contexts');
 const { createAudit } = require('./lib/audit');
 const snapshots = require('./lib/snapshots');
 const capsules = require('./lib/capsules');
+const { hasInternet, NETWORK_ERRORS } = require('./lib/connectivity');
 
 const BAR = 80;    // abas (40) + endereço (40)
 const PROMPT = 44; // faixa de permissão, quando visível
@@ -61,8 +62,7 @@ const HOME = page('home.html');
 const PANEL = page('panel.html');
 const AUDIT = page('audit.html');
 const OFFLINE = page('offline.html');
-const NO_INTERNET = -106; // net::ERR_INTERNET_DISCONNECTED
-const ABORTED = -3;       // net::ERR_ABORTED (navegação cancelada, não é erro de rede)
+const NO_INTERNET = -106; // net::ERR_INTERNET_DISCONNECTED (o Chromium já sabe que está offline)
 const NOTICES = page('THIRD-PARTY-NOTICES.txt');
 const STORE = 'https://chromewebstore.google.com/';
 const SITE = 'https://trestech.com.br/'; // botão Início
@@ -215,10 +215,12 @@ function newTab(url) {
     sync();
   });
   wc.on('did-start-navigation', (_e, _u, inPage, isMain) => { if (isMain && !inPage) view.favicon = undefined; });
-  // sem internet: mostra o joguinho no lugar do erro; a página volta sozinha quando a conexão retorna
-  wc.on('did-fail-load', (_e, code, _desc, failed, isMain) => {
-    if (!isMain || !isWeb(failed) || code === ABORTED) return;
-    if (code === NO_INTERNET || !net.isOnline()) wc.loadURL(`${OFFLINE}?u=${encodeURIComponent(failed)}`);
+  // sem internet: mostra o joguinho no lugar do erro; a página volta sozinha quando a conexão retorna.
+  // Erro de rede ambíguo (ex.: "endereço não encontrado") é confirmado com um teste real de conexão.
+  wc.on('did-fail-load', async (_e, code, _desc, failed, isMain) => {
+    if (!isMain || !isWeb(failed) || !NETWORK_ERRORS.has(code)) return;
+    if (code !== NO_INTERNET && await hasInternet({ fetch: net.fetch })) return; // tem internet: era endereço errado
+    if (!wc.isDestroyed() && wc.getURL() === failed) wc.loadURL(`${OFFLINE}?u=${encodeURIComponent(failed)}`);
   });
   if (owner === main) {
     // histórico só da navegação principal: cápsulas e sessão efêmera não se misturam
