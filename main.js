@@ -83,6 +83,7 @@ const STORE = 'https://chromewebstore.google.com/';
 const SITE = 'https://trestech.com.br/'; // botão Início
 const ICON = path.join(__dirname, 'assets', 'icon.png');
 const HISTORY_MAX = 5000;
+const NEON_DEFAULT = '#39ff14'; // cor de destaque padrão (verde neon)
 const SNAPSHOT_EVERY = 10 * 60 * 1000; // snapshot automático (só grava se algo mudou)
 
 // Permissões perguntadas ao usuário; o resto é negado (ver lib/contexts.js).
@@ -100,7 +101,7 @@ const ASK = {
 
 let win, ses, extensions, decisionsFile, dataStore, capStore, snapStore;
 let decisions = {}; // { origin: { permissão: true|false } } — contexto principal e cápsulas
-let data = { bookmarks: [], history: [], prefs: { search: 'duckduckgo', theme: 'system', accent: 'default', bookmarksBar: 'show', snapshotsMax: snapshots.DEFAULT_MAX } };
+let data = { bookmarks: [], history: [], prefs: { search: 'duckduckgo', theme: 'system', accent: NEON_DEFAULT, bookmarksBar: 'show', snapshotsMax: snapshots.DEFAULT_MAX } };
 let caps = [];      // cápsulas persistidas (lib/capsules.js)
 let snaps = [];     // snapshots (lib/snapshots.js)
 let pending = [];   // pedidos de permissão aguardando resposta
@@ -120,7 +121,7 @@ const isInternal = u => isPanel(u) || isAudit(u);
 const home = () => `${HOME}?e=${data.prefs.search}&a=${encodeURIComponent(data.prefs.accent)}`;
 const barVisible = () => data.prefs.bookmarksBar === 'show' && data.bookmarks.length > 0;
 const barItems = () => [...data.bookmarks].reverse(); // na barra: ordem em que foram adicionados
-const isAccent = v => v === 'default' || /^#[0-9a-f]{6}$/i.test(v);
+const isAccent = v => /^#[0-9a-f]{6}$/i.test(v);
 const save = () => dataStore.save();
 const ephemeral = () => [...contexts.values()].find(c => c.kind === 'ephemeral');
 
@@ -879,6 +880,7 @@ app.whenReady().then(async () => {
   decisions = store.readJSON(decisionsFile, {});
   const d = store.readJSON(dataFile, {});
   data = { ...data, ...d, prefs: { ...data.prefs, ...d.prefs } };
+  if (data.prefs.accent === 'default') data.prefs.accent = NEON_DEFAULT; // a antiga "Prata" saiu da paleta
   caps = store.readJSON(capsFile, []);
   snaps = store.readJSON(snapsFile, []);
   dataStore = store.debounced(dataFile, () => data);

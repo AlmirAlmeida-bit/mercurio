@@ -84,6 +84,8 @@ npm run dist:mac     # Mac .dmg/.zip       -> dist/mac/   (só num Mac)
 
 ## Decisões tomadas (e por quê)
 
+- **Identidade visual (21/11/2026):** cantos quase quadrados (`border-radius: 2px` em tudo; só o ícone de carregamento é redondo) e cores de destaque **fluorescentes** com brilho neon (`--glow`, definido em `accent.js`). Paleta: verde neon `#39ff14` (padrão, combina com o logo), ciano, magenta, amarelo-limão, laranja, rosa-choque, violeta elétrico + cor livre. Objetivo: ser diferente dos navegadores do mercado, que usam cantos bem arredondados. Novos elementos devem seguir: 2px de canto e `var(--accent)` / `var(--glow)` para destaque.
+
 - **Electron em vez de criar um motor ou bifurcar o Chromium:** o único caminho viável para uma equipe pequena; o Chromium dá compatibilidade com sites e extensões.
 - **`electron-chrome-extensions` + `electron-chrome-web-store` (MIT):** o Electron sozinho só entende parte das extensões; estas bibliotecas trazem ícones, popups, abas e a loja.
 - **Extensões fora da barra (pedido do Almir):** ficam só no painel. Consequência: extensões que dependem de clicar no ícone (ex.: gerenciador de senhas) não abrem o popup. Ideia pendente: opção "Fixar na barra".

@@ -192,19 +192,19 @@ const sections = {
   },
 };
 
-// Cores prontas (as do logo primeiro) + uma livre pelo seletor nativo.
+// Cores fluorescentes (verde neon = padrão, combina com o logo) + uma livre pelo seletor nativo.
 const ACCENTS = {
-  default: 'Prata', '#f2b33d': 'Ouro', '#2fa8ff': 'Azul', '#ff7a2f': 'Laranja',
-  '#2ec27e': 'Esmeralda', '#9b7bff': 'Violeta', '#ff5d8f': 'Rosa',
+  '#39ff14': 'Verde neon', '#00f0ff': 'Ciano', '#ff00e6': 'Magenta', '#e6ff00': 'Amarelo-limão',
+  '#ff6a00': 'Laranja neon', '#ff2e88': 'Rosa-choque', '#b026ff': 'Violeta elétrico',
 };
 function swatches() {
   const pick = async value => { d = await call('setPref', { key: 'accent', value }); render(); };
   const current = d.prefs.accent;
-  const custom = current !== 'default' && !ACCENTS[current];
+  const custom = !ACCENTS[current];
   return h('div', { class: 'swatches', role: 'radiogroup', 'aria-label': 'Cor de destaque' },
     Object.entries(ACCENTS).map(([value, name]) => h('button', {
       class: 'sw', role: 'radio', title: name, 'aria-label': name, 'aria-checked': current === value,
-      style: `--c:${value === 'default' ? 'linear-gradient(135deg,#fff,#9aa0ab)' : value}`, onclick: () => pick(value),
+      style: `--c:${value}`, onclick: () => pick(value),
     })),
     h('label', { class: 'sw custom', title: 'Outra cor', 'aria-checked': custom, style: custom ? `--c:${current}` : '' },
       h('input', { type: 'color', 'aria-label': 'Escolher outra cor', value: custom ? current : '#c9ced6', onchange: e => pick(e.target.value) })));

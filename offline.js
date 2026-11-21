@@ -111,8 +111,8 @@ function draw() {
   g.fillStyle = css('--obstacle');
   for (const o of obstacles) {
     g.beginPath();
-    if (o.cloud) g.roundRect(o.x, o.y, o.w, o.h, 9);
-    else g.roundRect(o.x, GROUND + drop.r - o.h, o.w, o.h, [5, 5, 0, 0]);
+    if (o.cloud) g.roundRect(o.x, o.y, o.w, o.h, 2);
+    else g.roundRect(o.x, GROUND + drop.r - o.h, o.w, o.h, [2, 2, 0, 0]);
     g.fill();
   }
   drawDrop();

@@ -3,9 +3,11 @@
 function applyAccent(hex) {
   const s = document.documentElement.style;
   if (!/^#[0-9a-f]{6}$/i.test(hex ?? '')) {
-    for (const p of ['--accent', '--metal', '--metal-fg']) s.removeProperty(p);
+    for (const p of ['--accent', '--metal', '--metal-fg', '--glow']) s.removeProperty(p);
     return;
   }
+  // brilho neon usado em botões, aba ativa e foco
+  s.setProperty('--glow', `0 0 12px color-mix(in srgb, ${hex} 55%, transparent)`);
   const n = parseInt(hex.slice(1), 16);
   const lum = 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
   s.setProperty('--accent', hex);
