@@ -142,7 +142,9 @@ Já estava certo: downloads recebem a marca "baixado da internet" do Windows (`Z
 ## Pendências
 
 - [x] **Testar a segurança** do navegador: auditoria + correções na v0.3.0 (ver "Auditoria de segurança")
-- [ ] **Certificado de assinatura de código** (Windows; Apple depois). Almir só publica com ele
+- [ ] **Certificado de assinatura de código** (Windows; Apple depois). Almir só publica com ele. Opções levantadas em 21/11/2026: 1) Microsoft Store (a Microsoft assina o app; conta individual grátis, empresa ~US$ 99 uma vez; conferir a política para navegadores; electron-builder gera `appx`) — ficou de eu preparar o pacote para teste; 2) Trusted/Artifact Signing da Microsoft (~US$ 10/mês; conferir se já atende o Brasil); 3) Certum/Sectigo (US$ 100–400/ano). Mac: Apple Developer US$ 99/ano. Certificados grátis (SignPath, Certum Open Source) são só para código aberto
+- [ ] **Atualizar instaladores de Mac e Linux** (em `dist` ainda estão na 0.1.0; Windows já está na 0.3.0). Rodar o GitHub Actions manualmente (Actions → Build → Run workflow, sem tag para não publicar em Releases), baixar os Artifacts e colocar em `dist\mac` e `dist\linux`
+- [ ] **Limpar `dist\windows`:** apagar os instaladores de teste 0.2.0 a 0.2.6 e o `builder-debug.yml`, deixando só o 0.3.0 (+ `.blockmap` e `latest.yml`)
 - [ ] **Planejar o site de distribuição** (agenda de 21/11/2026). Com o repositório privado, os Releases do GitHub deixam de ser públicos
 - [ ] Tornar o repositório privado (Almir vai fazer)
 - [x] Release v0.1.0 publicada com os 8 instaladores: https://github.com/AlmirAlmeida-bit/mercurio/releases/tag/v0.1.0
