@@ -1,3 +1,45 @@
+/*
+ * Mercurio — © 2026 TresTech (trestech.com.br). Todos os direitos reservados
+ * sobre o código, a marca, o logo e o design do Mercurio.
+ *
+ * SOFTWARE DE TERCEIROS
+ * O Mercurio é construído sobre os projetos de código aberto abaixo. Cada um
+ * pertence aos seus autores e é usado conforme a respectiva licença.
+ *
+ * Plataforma (vai dentro de todos os instaladores)
+ *   Electron 45.4.1 ................ MIT           © GitHub Inc. e contribuidores do Electron
+ *   Chromium 156.0.8078.100 ........ BSD-3-Clause  © The Chromium Authors (licença principal;
+ *                                                  inclui componentes com outras licenças,
+ *                                                  ex.: V8 BSD-3-Clause, Blink, ICU, etc.)
+ *   Node.js 24.22.3 (embutido) ..... MIT           © OpenJS Foundation e contribuidores do Node.js
+ *   Os textos completos acompanham o app: LICENSE.electron.txt e LICENSES.chromium.html
+ *   (este lista todas as licenças dos componentes do Chromium).
+ *
+ * Bibliotecas usadas pelo app (package.json "dependencies" e as que elas trazem)
+ *   electron-chrome-extensions 4.10.0 ... MIT           © Samuel Maddock
+ *   electron-chrome-web-store 0.13.0 .... MIT           © Samuel Maddock
+ *   adm-zip 0.5.18 ...................... MIT           © Another-D-Mention Software e contribuidores
+ *   debug 4.4.3 ......................... MIT           © TJ Holowaychuk, Josh Junon
+ *   ms 2.1.3 ............................ MIT           © Vercel, Inc.
+ *   pbf 4.0.2 ........................... BSD-3-Clause  © Mapbox
+ *   protocol-buffers-schema 3.6.1 ....... MIT           © Mathias Buus
+ *   resolve-protobuf-schema 2.1.0 ....... MIT           © Mathias Buus
+ *   @types/chrome 0.0.287 ............... MIT           © Microsoft Corporation (DefinitelyTyped)
+ *   @types/filesystem 0.0.36 ............ MIT           © Microsoft Corporation (DefinitelyTyped)
+ *   @types/filewriter 0.0.33 ............ MIT           © Microsoft Corporation (DefinitelyTyped)
+ *   @types/har-format 1.2.16 ............ MIT           © Microsoft Corporation (DefinitelyTyped)
+ *
+ * Ferramentas de empacotamento (geram os instaladores; não rodam dentro do navegador)
+ *   electron-builder 26.18.0 ............ MIT           © Loopline Systems
+ *   NSIS (instalador do Windows) ........ zlib/libpng   © Nullsoft e contribuidores do NSIS
+ *
+ * Conteúdo de terceiros acessado pelo navegador (não incluído no app)
+ *   Chrome Web Store — serviço do Google, sujeito aos termos do Google.
+ *   Mecanismos de busca (DuckDuckGo, Google, Bing, Brave) — serviços de seus donos.
+ *
+ * Para atualizar esta lista após mudar dependências:
+ *   npm ls --omit=dev --all
+ */
 const { app, BrowserWindow, WebContentsView, Menu, MenuItem, clipboard, dialog, ipcMain, nativeImage, nativeTheme, session } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
