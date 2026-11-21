@@ -38,9 +38,9 @@ Usa **Electron 45** (motor Chromium 156), é compatível com extensões da Chrom
 | `home.html` / `home.js` | Página da nova aba (logo grande + busca) |
 | `accent.js` | Aplica a cor de destaque (usado pela barra, painel e nova aba) |
 | `url.js` | Converte o que foi digitado em endereço ou busca. Tem autoteste: `npm test` |
-| `logo.png` | Arte original do logo (caduceu, fundo preto) |
+| `logo.png` | Arte original do logo (símbolo ☿ num medalhão circular, fundo "Matrix"), trocada em 21/11/2026 |
 | `assets/logo.png`, `assets/icon.png` | Gerados a partir do `logo.png` por `npm run icon` |
-| `scripts/icon.js` | Gera o logo transparente e o ícone do app |
+| `scripts/icon.js` | Recorta o medalhão em círculo (logo dentro do app) e faz o ícone do app (arte inteira, cantos arredondados). Se a arte mudar, ajustar `CIRCLE` |
 | `scripts/notices.js` | Gera o `THIRD-PARTY-NOTICES.txt` |
 | `.github/workflows/build.yml` | GitHub Actions: gera instaladores de Windows, Mac e Linux |
 
@@ -92,4 +92,4 @@ npm run dist:mac     # Mac .dmg/.zip       -> dist/mac/   (só num Mac)
 - [ ] **Planejar o site de distribuição** (agenda de 21/11/2026). Com o repositório privado, os Releases do GitHub deixam de ser públicos
 - [ ] Tornar o repositório privado (Almir vai fazer)
 - [x] Release v0.1.0 publicada com os 8 instaladores: https://github.com/AlmirAlmeida-bit/mercurio/releases/tag/v0.1.0
-- [ ] Ideias em aberto: "Fixar extensão na barra"; compartilhamento de tela (Meet); definir o Mercurio como navegador padrão; certificados de assinatura (Windows e Apple); halo do logo no tema claro
+- [ ] Ideias em aberto: "Fixar extensão na barra"; compartilhamento de tela (Meet); definir o Mercurio como navegador padrão; certificados de assinatura (Windows e Apple)
