@@ -50,6 +50,8 @@ Usa **Electron 45** (motor Chromium 156), é compatível com extensões da Chrom
 | `offline.html` / `offline.js` | Página "sem internet" com o joguinho (canvas, sem imagens nem bibliotecas) |
 | `accent.js` | Aplica a cor de destaque (usado pela barra, painel e nova aba) |
 | `url.js` | Converte o que foi digitado em endereço ou busca. Tem autoteste: `npm test` |
+| `lib/hosts.js` | Detecta endereços falsos (letras de alfabetos misturados, sósias cirílicos/gregos, domínio que imita a Chrome Web Store) e decide como mostrar nomes com acento na barra. Autoteste no `npm test` |
+| `aviso.html` / `aviso.js` | Página "O Mercurio bloqueou um possível site falso" |
 | `logo.png` | Arte original do logo: ☿ estilizado em traços neon (verde/ciano/magenta), fundo transparente. Trocado em 21/11/2026 (o atual tem só 257×288 px; um maior deixa o ícone mais nítido) |
 | `assets/logo.png`, `assets/icon.png` | Gerados a partir do `logo.png` por `npm run icon` |
 | `scripts/icon.js` | Encaixa o logo inteiro (sem cortar) num quadrado transparente para uso no app, e faz o ícone do app com o logo sobre fundo preto |
@@ -63,7 +65,7 @@ Dados do usuário ficam em `%APPDATA%\Mercurio` (Windows): `data.json` (favorito
 ```bash
 npm install          # instalar dependências
 npm start            # rodar em desenvolvimento
-npm test             # autotestes (barra de endereço + snapshots)
+npm test             # autotestes (barra de endereço, snapshots, conexão, domínios falsos)
 npm run icon         # regerar logo/ícone a partir de logo.png
 npm run notices      # regerar THIRD-PARTY-NOTICES.txt (após mudar dependências)
 npm run dist:win     # instalador Windows  -> dist/windows/
@@ -90,7 +92,32 @@ npm run dist:mac     # Mac .dmg/.zip       -> dist/mac/   (só num Mac)
 - **`electron-chrome-extensions` + `electron-chrome-web-store` (MIT):** o Electron sozinho só entende parte das extensões; estas bibliotecas trazem ícones, popups, abas e a loja.
 - **Extensões fora da barra (pedido do Almir):** ficam só no painel. Consequência: extensões que dependem de clicar no ícone (ex.: gerenciador de senhas) não abrem o popup. Ideia pendente: opção "Fixar na barra".
 - **Segurança das páginas:** cada aba roda isolada (`sandbox`, `contextIsolation`, sem Node); só a barra e o painel locais falam com o `main.js`, e o `main.js` confere a origem; `<webview>` bloqueado; endereços `javascript:` e `file:` digitados viram busca.
-- **Permissões negadas por padrão:** só tela cheia e copiar são liberados direto; câmera, microfone, localização, notificações etc. perguntam.
+- **Permissões negadas por padrão:** só tela cheia e copiar são liberados direto; câmera, microfone, localização, notificações etc. perguntam. A decisão vale para o site da barra de endereço (não para o iframe que pediu). Cápsulas têm decisões próprias, só em memória (perguntam de novo após reabrir o navegador). Extensões só ganham sem perguntar o que declararam no manifest.
+
+### Auditoria de segurança (v0.3.0, 21/11/2026)
+
+Feita com ataques reais (kit em HTTPS local com domínios falsos e extensões de teste). Corrigido e testado antes/depois:
+
+| Item | Problema | Correção |
+|---|---|---|
+| 1 | Site `chromewebstore.google.com.qualquercoisa` listava e **desinstalava extensões sem confirmação** (a biblioteca da loja só confere o começo do endereço) | `lib/hosts.js` + `harden()` cancelam esses domínios antes de carregar |
+| IDN | Domínio com letra cirílica (`cаsа.com`) abria normalmente | Bloqueado com página de aviso; acentos legítimos (`pão.com.br`) passam e aparecem com acento na barra |
+| 3 | Fuses do Electron no padrão (`ELECTRON_RUN_AS_NODE`, `NODE_OPTIONS`, `--inspect`, sem integridade do asar) | `build.electronFuses` no `package.json` (conferir com `npx @electron/fuses read --app <Mercurio.exe>`) |
+| 4 | Ícones de abas de cápsulas/efêmera baixados pela sessão principal (cookies e cache vazavam) | `iconData()` baixa pela sessão da aba e manda `data:` para a barra |
+| 5 | Permissões compartilhadas entre Principal e cápsulas; guardadas pelo iframe | Decisões por cápsula + chave = site da barra |
+| 6 | Certificado digital enviado sem perguntar | Diálogo `select-client-certificate` |
+| 7 | Esc não saía da tela cheia | Esc sai sempre (mundo isolado; o site não consegue impedir). A barra de endereço continua visível na tela cheia |
+| 8 | Extensões ganhavam câmera/localização sem perguntar | Só o que o manifest declara |
+| 9 | Uma extensão podia usar o id de outra (ex.: `nativeMessaging`) — falha da `electron-chrome-extensions` | `guardExtensionIds()` confere o id com a origem real |
+| 10 | Páginas internas em `file://` | Protocolo próprio `mercurio://app/` com lista fixa de arquivos (`SERVED` no `main.js`); sites não abrem nem colocam em iframe |
+| 12 | Pop-ups sem clique (4 de 20 passavam) e abas escondidas abrindo abas | Só com clique/tecla recente na aba visível, um por gesto |
+| 13 | `commands[name]` aceitava nomes herdados (`constructor`) | `Object.hasOwn` |
+| 14 | Pasta de cápsula excluída ficava no disco | Apagada ao abrir o navegador |
+
+Já estava certo: downloads recebem a marca "baixado da internet" do Windows (`ZoneId=3`); erros de certificado são recusados.
+**Kit de ataque:** `scripts/seguranca/attack.ps1` (código-fonte), `attack.ps1 -Exe <...>\win-unpacked\Mercurio.exe` (empacotado), `attack.ps1 -Script smoke.mjs` (funcionamento normal). Abre janelas do Mercurio por ~1 min; não mexer nelas. Todos os itens devem sair "BLOQUEADO"/0, exceto `item12c_popupComClique: 1`, `item7_saiuComEsc: true` e `idn_legitimo.carregou: true`.
+**Ao atualizar `electron-chrome-extensions` ou `electron-chrome-web-store`:** rodar o kit de ataque de novo (o `guardExtensionIds` depende de `extensions.ctx.router`; se a estrutura mudar, ele avisa no console).
+**Em aberto (decisão do Almir):** item 2 — assinatura digital do instalador e das atualizações. Sem ela, quem invadir a hospedagem do site consegue distribuir uma atualização falsa. Publicar só depois de ter o certificado. Remover `MERCURIO_UPDATE_URL` do app instalado quando assinar. O Mercurio não tem proteção contra sites de golpe/malware do Google (Safe Browsing), que o Electron não inclui.
 - **Aviso de direitos por instalação:** usa a data do executável como identificador, porque `%APPDATA%` sobrevive à reinstalação.
 - **Instalador Windows de um clique (NSIS), sem assinatura digital:** o Windows mostra "O Windows protegeu o computador" → *Mais informações → Executar assim mesmo*.
 - **Mac sem certificado Apple:** o macOS bloqueia na 1ª vez → botão direito → *Abrir*, ou `xattr -cr /Applications/Mercurio.app`.
@@ -114,7 +141,8 @@ npm run dist:mac     # Mac .dmg/.zip       -> dist/mac/   (só num Mac)
 
 ## Pendências
 
-- [ ] **Testar a segurança** do navegador (agenda de 21/11/2026)
+- [x] **Testar a segurança** do navegador: auditoria + correções na v0.3.0 (ver "Auditoria de segurança")
+- [ ] **Certificado de assinatura de código** (Windows; Apple depois). Almir só publica com ele
 - [ ] **Planejar o site de distribuição** (agenda de 21/11/2026). Com o repositório privado, os Releases do GitHub deixam de ser públicos
 - [ ] Tornar o repositório privado (Almir vai fazer)
 - [x] Release v0.1.0 publicada com os 8 instaladores: https://github.com/AlmirAlmeida-bit/mercurio/releases/tag/v0.1.0

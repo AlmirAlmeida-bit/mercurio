@@ -1,7 +1,7 @@
 {
   "name": "mercurio",
   "productName": "Mercurio",
-  "version": "0.2.6",
+  "version": "0.3.0",
   "description": "Navegador rápido, seguro e compatível com extensões Chrome",
   "author": {
     "name": "TresTech",
@@ -12,7 +12,7 @@
   "desktopName": "mercurio.desktop",
   "scripts": {
     "start": "electron .",
-    "test": "node url.js && node lib/snapshots.test.js && node lib/connectivity.js",
+    "test": "node url.js && node lib/snapshots.test.js && node lib/connectivity.js && node lib/hosts.js",
     "icon": "electron scripts/icon.js",
     "notices": "node scripts/notices.js",
     "dist": "npm run dist:win && npm run dist:linux && npm run dist:mac",
@@ -40,12 +40,24 @@
       "audit.js",
       "offline.html",
       "offline.js",
+      "aviso.html",
+      "aviso.js",
       "lib/**",
       "!lib/*.test.js",
       "THIRD-PARTY-NOTICES.txt",
       "assets/**"
     ],
     "compression": "maximum",
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableCookieEncryption": true,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true,
+      "grantFileProtocolExtraPrivileges": false,
+      "resetAdHocDarwinSignature": true
+    },
     "directories": {
       "output": "dist"
     },

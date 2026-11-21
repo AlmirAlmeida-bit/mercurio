@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'">
+<title>Site bloqueado</title>
+<style>
+  :root { color-scheme: dark; --bg: #000; --fg: #e8e9ec; --dim: #8a8d96; --line: #2a2c33; --warn: #ff2e55; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { display: grid; place-items: center; background: var(--bg); color: var(--fg);
+         font: 15px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; }
+  main { width: min(620px, 100% - 32px); border-left: 3px solid var(--warn); padding: 8px 0 8px 24px; }
+  h1 { margin: 0 0 10px; font: 300 26px "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif; }
+  p { margin: 0 0 14px; color: var(--dim); line-height: 1.5; }
+  code { display: block; padding: 10px 12px; margin: 0 0 14px; border: 1px solid var(--line); border-radius: 2px;
+         color: var(--fg); font: 14px Consolas, monospace; overflow-wrap: anywhere; }
+  strong { color: var(--warn); font-weight: 600; }
+  button { font: inherit; padding: 8px 16px; border: 1px solid var(--line); border-radius: 2px; background: #111; color: var(--fg); cursor: pointer; }
+  button:hover, button:focus-visible { border-color: var(--warn); outline: none; }
+</style>
+</head>
+<body>
+  <main>
+    <h1>O Mercurio bloqueou um possível site falso</h1>
+    <p>Este endereço <strong id="reason">imita outro site</strong>. Sites assim costumam copiar a aparência de bancos, lojas e e-mails para roubar senhas.</p>
+    <code id="host"></code>
+    <p>Se você chegou aqui por um link de e-mail ou mensagem, não digite nenhuma senha. Para acessar o site verdadeiro, digite o endereço você mesmo na barra.</p>
+    <button id="back" type="button">Voltar</button>
+  </main>
+  <script src="aviso.js"></script>
+</body>
+</html>

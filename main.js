@@ -54,7 +54,7 @@
  * Para atualizar esta lista após mudar dependências:
  *   npm ls --omit=dev --all
  */
-const { app, BrowserWindow, WebContentsView, Menu, MenuItem, clipboard, dialog, ipcMain, nativeImage, nativeTheme, net, session } = require('electron');
+const { app, BrowserWindow, WebContentsView, Menu, MenuItem, clipboard, dialog, ipcMain, nativeImage, nativeTheme, net, protocol, session } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
@@ -67,16 +67,30 @@ const { createAudit } = require('./lib/audit');
 const snapshots = require('./lib/snapshots');
 const capsules = require('./lib/capsules');
 const { hasInternet, NETWORK_ERRORS } = require('./lib/connectivity');
+const { displayHost } = require('./lib/hosts');
 const { autoUpdater } = require('electron-updater');
 
 const BAR = 80;    // abas (40) + endereço (40)
 const PROMPT = 44; // faixa de permissão, quando visível
 const BMBAR = 32;  // barra de favoritos, quando visível
-const page = f => pathToFileURL(path.join(__dirname, f)).href;
+
+// Páginas internas em mercurio://app/ (e não file://): sites não conseguem abri-las, extensões com acesso a
+// arquivos não as alcançam e só os arquivos desta lista são servidos.
+protocol.registerSchemesAsPrivileged([{ scheme: 'mercurio', privileges: { standard: true, secure: true } }]);
+const SERVED = new Set(['ui.html', 'ui.js', 'home.html', 'home.js', 'accent.js', 'panel.html', 'panel.js', 'audit.html', 'audit.js',
+  'offline.html', 'offline.js', 'aviso.html', 'aviso.js', 'assets/logo.png', 'THIRD-PARTY-NOTICES.txt']);
+function serve(req) {
+  const { host, pathname } = new URL(req.url);
+  const file = decodeURIComponent(pathname.slice(1));
+  if (host !== 'app' || !SERVED.has(file)) return new Response('', { status: 404 });
+  return net.fetch(pathToFileURL(path.join(__dirname, file)).href);
+}
+const page = f => `mercurio://app/${f}`;
 const HOME = page('home.html');
 const PANEL = page('panel.html');
 const AUDIT = page('audit.html');
 const OFFLINE = page('offline.html');
+const AVISO = page('aviso.html'); // site falso bloqueado (lib/hosts.js)
 const NO_INTERNET = -106; // net::ERR_INTERNET_DISCONNECTED (o Chromium já sabe que está offline)
 const NOTICES = page('THIRD-PARTY-NOTICES.txt');
 const STORE = 'https://chromewebstore.google.com/';
@@ -109,6 +123,7 @@ let update = { status: app.isPackaged ? 'idle' : 'dev' }; // atualização autom
 
 // Contextos (lib/contexts.js). `tabs`/`active` apontam sempre para o contexto visível.
 const contexts = new Map();
+const capDecisions = new Map(); // id da cápsula -> decisões de permissão (memória)
 let main, ctx;
 let tabs = [];
 let active = -1;
@@ -135,8 +150,40 @@ function shownUrl(u) {
   if (u.startsWith(HOME)) return '';
   if (isPanel(u)) return 'mercurio://painel';
   if (isAudit(u)) return 'mercurio://auditoria';
-  if (u.startsWith(OFFLINE)) return new URL(u).searchParams.get('u') ?? ''; // mostra o site que não abriu
+  // offline e aviso de site falso: mostra o endereço que não abriu (o falso fica em xn--..., que revela o truque)
+  if (u.startsWith(OFFLINE) || u.startsWith(AVISO)) return new URL(u).searchParams.get('u') ?? '';
+  try {
+    const { hostname } = new URL(u);
+    const shown = displayHost(hostname); // "xn--po-sia.com" -> "pão.com" quando é seguro
+    if (shown !== hostname) return u.replace(hostname, shown);
+  } catch {}
   return u;
+}
+
+// Site falso (lib/hosts.js): a navegação foi cancelada; mostra o aviso na aba.
+function onBlocked(wc, url, reason) {
+  if (!wc.isDestroyed()) wc.loadURL(`${AVISO}?u=${encodeURIComponent(url)}&r=${encodeURIComponent(reason)}`);
+}
+
+// O ícone da aba é baixado pela sessão da própria aba e vai para a barra como data:. Se a barra o baixasse, usaria
+// a sessão principal: cookies e cache do Principal se misturariam com cápsulas e sessão efêmera.
+async function iconData(ses, url) {
+  try {
+    const r = await ses.fetch(url);
+    const type = (r.headers.get('content-type') ?? '').split(';')[0];
+    const buf = Buffer.from(await r.arrayBuffer());
+    if (!r.ok || !type.startsWith('image/') || buf.length > 200_000) return undefined;
+    return `data:${type};base64,${buf.toString('base64')}`;
+  } catch { return undefined; }
+}
+
+const GESTURES = new Set(['mouseDown', 'rawKeyDown', 'keyDown', 'touchStart', 'gestureTap']);
+
+// Esc sempre sai da tela cheia (vale com o foco na aba ou na barra). Roda num mundo isolado: o site não consegue
+// trocar document.exitFullscreen para prender o usuário.
+let fullscreenWc = null;
+function exitFullscreen() {
+  if (fullscreenWc && !fullscreenWc.isDestroyed()) fullscreenWc.executeJavaScriptInIsolatedWorld(999, [{ code: 'document.exitFullscreen()' }]).catch(() => {});
 }
 
 function tabTitle(wc) {
@@ -155,12 +202,13 @@ function sync() {
     tabs: tabs.map(v => ({
       title: tabTitle(v.webContents),
       loading: v.webContents.isLoading(),
-      favicon: v.favicon,
+      favicon: v.icon,
       panel: isInternal(v.webContents.getURL()),
     })),
     active,
     accent: data.prefs.accent,
     url: shownUrl(url),
+    blocked: url.startsWith(AVISO),
     bookmarkable: isWeb(url),
     bookmarked: data.bookmarks.some(b => b.url === url),
     bookmarks: barVisible() ? barItems().map(({ url, title, favicon }) => ({ url, title, favicon })) : [],
@@ -244,22 +292,33 @@ function newTab(url) {
   });
   view.ctx = owner;
   const wc = view.webContents;
-  // pop-ups abrem como abas do mesmo contexto (uma cápsula não vaza para o principal)
+  // Pop-ups viram abas do mesmo contexto, e só com clique ou tecla recente na aba visível (um por gesto), como o
+  // bloqueador do Chrome. Uma aba escondida, ou um script sozinho, não abre abas.
+  wc.on('input-event', (_e, i) => { if (GESTURES.has(i.type)) view.gesture = Date.now(); });
   wc.setWindowOpenHandler(({ url }) => {
-    if (isWeb(url)) { switchContext(owner); newTab(url); }
+    const gesture = Date.now() - (view.gesture ?? 0) < 5000 && tabs[active] === view;
+    if (isWeb(url) && gesture) { view.gesture = 0; newTab(url); }
     return { action: 'deny' };
   });
   if (internal) {
     // páginas internas nunca saem de si mesmas: links abrem em aba nova
     wc.on('will-navigate', (e, u) => { if (!isInternal(u)) { e.preventDefault(); if (isWeb(u)) newTab(u); } });
+  } else {
+    // sites não abrem páginas internas (nem em iframe)
+    wc.on('will-frame-navigate', d => { if (d.url.startsWith('mercurio:')) d.preventDefault(); });
   }
-  wc.on('page-favicon-updated', (_e, icons) => {
-    view.favicon = icons.find(i => i.startsWith('https:'));
+  wc.on('enter-html-full-screen', () => { fullscreenWc = wc; });
+  wc.on('leave-html-full-screen', () => { if (fullscreenWc === wc) fullscreenWc = null; });
+  wc.on('page-favicon-updated', async (_e, icons) => {
+    const url = icons.find(i => i.startsWith('https:'));
+    view.favicon = url; // endereço: guardado nos favoritos (sessão principal)
+    view.icon = url && await iconData(wc.session, url); // imagem: mostrada na aba
+    if (wc.isDestroyed() || view.favicon !== url) return; // mudou de página enquanto baixava
     const b = data.bookmarks.find(x => x.url === wc.getURL());
-    if (b && view.favicon && b.favicon !== view.favicon) { b.favicon = view.favicon; save(); }
+    if (b && url && b.favicon !== url) { b.favicon = url; save(); }
     sync();
   });
-  wc.on('did-start-navigation', (_e, _u, inPage, isMain) => { if (isMain && !inPage) view.favicon = undefined; });
+  wc.on('did-start-navigation', (_e, _u, inPage, isMain) => { if (isMain && !inPage) view.favicon = view.icon = undefined; });
   // sem internet: mostra o joguinho no lugar do erro; a página volta sozinha quando a conexão retorna.
   // Erro de rede ambíguo (ex.: "endereço não encontrado") é confirmado com um teste real de conexão.
   wc.on('did-fail-load', async (_e, code, _desc, failed, isMain) => {
@@ -394,7 +453,7 @@ function openEphemeral() {
   let e = ephemeral();
   if (!e) {
     e = ctxs.createContext('ephemeral', 'Sessão efêmera');
-    ctxs.harden(e.ses, ctxs.memoryDecisions(), onAsk); // decisões de permissão também só na memória
+    ctxs.harden(e.ses, { decisions: ctxs.memoryDecisions(), onAsk, onBlocked, serve }); // permissões também só na memória
     e.audit = createAudit(e.ses);
     contexts.set(e.id, e);
   }
@@ -472,7 +531,10 @@ function resumeCapsule(id) {
   let c = contexts.get(id);
   if (!c) {
     c = ctxs.createContext('capsule', cap.name, cap.id);
-    ctxs.harden(c.ses, globalDecisions, onAsk);
+    // ponytail: permissões da cápsula ficam na memória (separadas do Principal) e são perguntadas de novo
+    // depois de reabrir o navegador; guardar por cápsula se isso incomodar
+    if (!capDecisions.has(id)) capDecisions.set(id, ctxs.memoryDecisions());
+    ctxs.harden(c.ses, { decisions: capDecisions.get(id), onAsk, onBlocked, serve });
     contexts.set(id, c);
   }
   switchContext(c, cap);
@@ -497,6 +559,7 @@ async function deleteCapsule(id) {
     contexts.delete(id);
   }
   caps = capsules.remove(caps, id);
+  capDecisions.delete(id);
   capStore.save();
   sync();
   await ctxs.wipe(session.fromPartition(ctxs.partitionOf('capsule', id))); // cookies, logins e cache da cápsula
@@ -773,11 +836,11 @@ const panelActions = {
 ipcMain.handle('panel', async (e, name, arg) => {
   const url = e.senderFrame?.url;
   if (isPanel(url)) {
-    if (!panelActions[name]) throw new Error('ação desconhecida');
+    if (!Object.hasOwn(panelActions, name)) throw new Error('ação desconhecida');
     await panelActions[name](arg);
     return panelData();
   }
-  if (isAudit(url) && auditActions[name]) return auditActions[name](arg);
+  if (isAudit(url) && Object.hasOwn(auditActions, name)) return auditActions[name](arg);
   throw new Error('negado');
 });
 
@@ -824,8 +887,33 @@ function shortcuts(wc) {
     else if (ctrl && k === 'h') fn = () => openPanel('historico');
     else if (ctrl && k === ',') fn = () => openPanel('preferencias');
     else if (k === 'f12') fn = () => cur()?.toggleDevTools();
+    else if (k === 'escape' && fullscreenWc) fn = exitFullscreen;
     if (fn) { e.preventDefault(); fn(); }
   });
+}
+
+// electron-chrome-extensions usa o id de extensão que a própria página manda: uma extensão podia agir com as
+// permissões de outra (ex.: nativeMessaging). Aqui o id é conferido com a origem real de quem chamou.
+const extOf = u => { try { const x = new URL(u); return x.protocol === 'chrome-extension:' ? x.host : null; } catch { return null; } };
+function guardExtensionIds(router) {
+  if (!router?.onExtensionMessage || !router.addListener) {
+    console.error('electron-chrome-extensions mudou: revisar guardExtensionIds');
+    return;
+  }
+  const onMessage = router.onExtensionMessage.bind(router);
+  router.onExtensionMessage = (e, id, ...rest) => {
+    const sender = extOf(e.type === 'service-worker' ? e.serviceWorker?.scope : e.senderFrame?.url);
+    if (id && id !== sender) throw new Error('id de extensão não confere com a origem');
+    return onMessage(e, id, ...rest);
+  };
+  // ponytail: ouvintes de iframes de extensão dentro de sites não dão para conferir (a aba é do site); só bloqueia
+  // quando a aba é de outra extensão
+  const addListener = router.addListener.bind(router);
+  router.addListener = (l, id, name) => {
+    const host = l.type === 'frame' ? extOf(l.host?.getURL?.()) : null;
+    if (host && host !== id) return;
+    return addListener(l, id, name);
+  };
 }
 
 // As extensões vivem só no contexto principal.
@@ -842,6 +930,7 @@ async function setupExtensions() {
     // ponytail: janela única; chrome.windows.create abre as URLs como abas
     createWindow: async details => { switchContext(main); [].concat(details.url ?? []).forEach(u => newTab(u)); return win; },
   });
+  guardExtensionIds(extensions.ctx.router);
 
   // Instala/atualiza extensões direto da Chrome Web Store, com confirmação.
   await installChromeWebStore({
@@ -872,6 +961,26 @@ app.on('web-contents-created', (_, wc) => {
   wc.on('will-attach-webview', e => e.preventDefault()); // nada de <webview>
 });
 
+// Certificado de cliente: sem isto o Electron entrega o primeiro certificado do sistema a qualquer site que pedir.
+app.on('select-client-certificate', async (e, _wc, url, list, cb) => {
+  e.preventDefault();
+  if (!list.length || !win) return cb();
+  let host = url;
+  try { host = new URL(url).host; } catch {}
+  const shown = list.slice(0, 5);
+  const { response } = await dialog.showMessageBox(win, {
+    type: 'question',
+    title: 'Certificado digital',
+    message: `${host} pede um certificado digital`,
+    detail: 'Envie só se você confia neste site (ex.: e-CNPJ em sites do governo). O certificado identifica você.',
+    buttons: ['Não enviar', ...shown.map(c => c.subjectName || c.issuerName || 'Certificado')],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+  });
+  cb(response > 0 ? shown[response - 1] : undefined);
+});
+
 app.whenReady().then(async () => {
   const dir = app.getPath('userData');
   decisionsFile = path.join(dir, 'permissions.json');
@@ -884,6 +993,13 @@ app.whenReady().then(async () => {
   if (data.prefs.accent === 'default') data.prefs.accent = NEON_DEFAULT; // a antiga "Prata" saiu da paleta
   caps = store.readJSON(capsFile, []);
   snaps = store.readJSON(snapsFile, []);
+  // Pastas de cápsulas excluídas: os dados já foram apagados, mas a pasta só sai do disco com a sessão fechada.
+  try {
+    const parts = path.join(dir, 'Partitions');
+    for (const n of fs.readdirSync(parts)) {
+      if (n.startsWith('capsula-') && !caps.some(c => `capsula-${c.id}` === n)) fs.rmSync(path.join(parts, n), { recursive: true, force: true });
+    }
+  } catch {}
   dataStore = store.debounced(dataFile, () => data);
   capStore = store.debounced(capsFile, () => caps);
   snapStore = store.debounced(snapsFile, () => snaps);
@@ -894,7 +1010,7 @@ app.whenReady().then(async () => {
   contexts.set(main.id, main);
   ctx = main;
   tabs = main.tabs;
-  ctxs.harden(ses, globalDecisions, onAsk);
+  ctxs.harden(ses, { decisions: globalDecisions, onAsk, onBlocked, serve });
 
   win = new BrowserWindow({
     width: 1280,
@@ -923,11 +1039,11 @@ app.whenReady().then(async () => {
 
   ipcMain.on('cmd', (e, name, arg) => {
     if (e.sender !== win.webContents) return; // só a UI pode mandar comandos
-    commands[name]?.(arg);
+    if (Object.hasOwn(commands, name)) commands[name](arg);
   });
 
   await setupExtensions();
-  await win.loadFile('ui.html');
+  await win.loadURL(page('ui.html'));
   newTab();
   win.show();
   setInterval(() => takeSnapshot('auto'), SNAPSHOT_EVERY);

@@ -98,9 +98,9 @@ onState(s => {
   $('back').disabled = !s.canBack;
   $('forward').disabled = !s.canForward;
   if (document.activeElement !== url) url.value = s.url;
-  const insecure = s.url.startsWith('http://');
+  const insecure = s.url.startsWith('http://') || s.blocked; // site falso bloqueado: nunca mostra cadeado
   $('insecure').hidden = !insecure;
-  $('lock').style.display = s.url.startsWith('https://') ? '' : 'none';
+  $('lock').style.display = s.url.startsWith('https://') && !s.blocked ? '' : 'none';
   $('star').disabled = !s.bookmarkable;
   $('star').setAttribute('aria-pressed', s.bookmarked);
   $('star').title = !s.bookmarkable ? 'Abra um site para favoritar'
