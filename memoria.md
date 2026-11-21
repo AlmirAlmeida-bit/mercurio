@@ -23,6 +23,10 @@ Usa **Electron 45** (motor Chromium 156), é compatível com extensões da Chrom
 | Extensões | Instala direto da Chrome Web Store, com confirmação das permissões; atualiza sozinho; lista e remove no painel |
 | Permissões | Faixa "site quer usar câmera / localização…" com Permitir/Bloquear; lembra por site; dá para revogar no painel |
 | Importar favoritos | Preferências → "Importar favoritos": lê direto o arquivo `Bookmarks` dos perfis do Chrome, Edge e Brave (Windows, Mac, Linux); pastas são achatadas; repetidos são ignorados |
+| Contextos | Botão "● Principal ▾" no começo das abas: troca entre Principal, cápsulas e sessão efêmera. Cada contexto tem sessão própria (cookies, logins, cache); extensões e histórico só no Principal |
+| Cápsulas | Abas + sessão própria (`persist:capsula-<id>`) + anotações, com nome. Pausar fecha as abas (libera memória) e guarda as URLs; retomar reabre já logado; excluir apaga os dados. Ao fechar o navegador, as cápsulas voltam pausadas. Painel → Cápsulas |
+| Snapshots | Retrato das abas (Principal + cápsulas, nunca a efêmera). Manual, a cada 10 min se algo mudou, e ao fechar. Limite 10/20/50/100 (Preferências). Restaurar abre ao lado. Painel → Snapshots |
+| Sessão efêmera | `Ctrl+Shift+N`. Sessão só em memória, sem extensões nem histórico; página Auditoria (`mercurio://auditoria`) mostra navegações e requisições ao vivo (até 2.000), com Exportar JSON. Encerrar apaga abas, cookies, cache e o registro |
 | Preferências | Buscador (DuckDuckGo, Google, Bing, Brave), tema (sistema/escuro/claro), **cor de destaque**, limpar cookies/cache |
 | Aviso de direitos | Janela "© TresTech" com link para o site, na 1ª abertura **após cada instalação** |
 | Licenças | `THIRD-PARTY-NOTICES.txt` abre por Painel → Preferências → Sobre → "Licenças de terceiros" |
@@ -36,6 +40,12 @@ Usa **Electron 45** (motor Chromium 156), é compatível com extensões da Chrom
 | `preload.js` | Ponte segura entre a barra e o `main.js` |
 | `panel.html` / `panel.js` / `panel-preload.js` | Painel de configurações |
 | `home.html` / `home.js` | Página da nova aba (logo grande + busca) |
+| `lib/contexts.js` | Cria sessões por contexto e aplica a mesma política de segurança/permissões em todas (`harden`); `wipe` apaga dados |
+| `lib/capsules.js` | Dados das cápsulas (criar, renomear, anotar, excluir) |
+| `lib/snapshots.js` | Serializar/limitar/restaurar snapshots (funções puras; teste em `lib/snapshots.test.js`) |
+| `lib/audit.js` | Registro em memória da sessão efêmera (rede + navegação) |
+| `lib/store.js` | Gravação atômica de JSON (temporário + rename) |
+| `audit.html` / `audit.js` | Página de auditoria da sessão efêmera |
 | `accent.js` | Aplica a cor de destaque (usado pela barra, painel e nova aba) |
 | `url.js` | Converte o que foi digitado em endereço ou busca. Tem autoteste: `npm test` |
 | `logo.png` | Arte original do logo (símbolo ☿ num medalhão circular, fundo "Matrix"), trocada em 21/11/2026 |
@@ -44,14 +54,14 @@ Usa **Electron 45** (motor Chromium 156), é compatível com extensões da Chrom
 | `scripts/notices.js` | Gera o `THIRD-PARTY-NOTICES.txt` |
 | `.github/workflows/build.yml` | GitHub Actions: gera instaladores de Windows, Mac e Linux |
 
-Dados do usuário ficam em `%APPDATA%\Mercurio` (Windows): `data.json` (favoritos, histórico, preferências), `permissions.json`, `aviso-visto`.
+Dados do usuário ficam em `%APPDATA%\Mercurio` (Windows): `data.json` (favoritos, histórico, preferências), `permissions.json`, `capsules.json`, `snapshots.json`, `aviso-visto`. As partições das cápsulas ficam em `Partitions/capsula-<id>`.
 
 ## Comandos
 
 ```bash
 npm install          # instalar dependências
 npm start            # rodar em desenvolvimento
-npm test             # autoteste da barra de endereço
+npm test             # autotestes (barra de endereço + snapshots)
 npm run icon         # regerar logo/ícone a partir de logo.png
 npm run notices      # regerar THIRD-PARTY-NOTICES.txt (após mudar dependências)
 npm run dist:win     # instalador Windows  -> dist/windows/
@@ -85,6 +95,8 @@ npm run dist:mac     # Mac .dmg/.zip       -> dist/mac/   (só num Mac)
 - O nome do arquivo é `logo.png` em minúsculas (Mac e Linux diferenciam maiúsculas).
 - No Windows, o `AppImage` e o `.deb` do Linux não saem (precisam do GitHub Actions ou de um Linux).
 - Downloads grandes de Artifacts pelo `gh` caíram várias vezes; pelo navegador é mais estável.
+- Às vezes o Windows (antivírus) trava `dist\windows\win-unpacked` e o build falha com `EBUSY`. Solução: gerar em outra pasta (`npx electron-builder --win -c.directories.output=<pasta>`) e copiar o `.exe`.
+- Extensões só funcionam no contexto Principal (a biblioteca é ligada à sessão padrão). Decisão de 21/11/2026.
 
 ## Pendências
 

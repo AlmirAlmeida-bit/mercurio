@@ -91,9 +91,62 @@ const sections = {
       box];
   },
 
+  capsulas() {
+    const box = h('div');
+    const name = h('input', { class: 'search', placeholder: 'Nome da nova cápsula (ex.: Cliente X)', 'aria-label': 'Nome da nova cápsula', maxlength: '60' });
+    const createBtn = h('button', { class: 'btn primary', onclick: () => act('createCapsule', name.value) }, 'Criar cápsula');
+    name.onkeydown = e => e.key === 'Enter' && createBtn.click();
+    list = () => {
+      box.replaceChildren(h('div', { class: 'list' }, d.capsules.length ? d.capsules.map(c => {
+        const saved = h('span', { class: 'ok' });
+        let timer;
+        const notes = h('textarea', { placeholder: 'Anotações rápidas desta cápsula…', 'aria-label': `Anotações de ${c.name}`, maxlength: '5000',
+          oninput: e => {
+            clearTimeout(timer);
+            saved.textContent = '';
+            timer = setTimeout(async () => { await call('noteCapsule', { id: c.id, notes: e.target.value }); saved.textContent = 'Salvo ✓'; }, 600);
+          } });
+        notes.value = c.notes;
+        const title = h('input', { class: 'cap-name', value: c.name, 'aria-label': 'Nome da cápsula', maxlength: '60',
+          onchange: e => act('renameCapsule', { id: c.id, name: e.target.value }) });
+        return h('div', { class: 'cap' },
+          h('div', { class: 'cap-head' }, title,
+            h('span', { class: c.live ? 'chip on' : 'chip' }, c.current ? 'Em uso' : c.live ? 'Aberta' : 'Pausada'),
+            c.live
+              ? h('button', { class: 'act', onclick: () => act('pauseCapsule', c.id) }, 'Pausar')
+              : h('button', { class: 'act go', onclick: () => act('resumeCapsule', c.id) }, 'Retomar'),
+            c.live && !c.current ? h('button', { class: 'act go', onclick: () => act('resumeCapsule', c.id) }, 'Abrir') : null,
+            h('button', { class: 'act', onclick: () => confirm(`Excluir "${c.name}"? As abas, os logins e os dados desta cápsula serão apagados.`) && act('deleteCapsule', c.id) }, 'Excluir')),
+          notes,
+          h('div', { class: 'meta' }, `${c.tabCount} aba${c.tabCount === 1 ? '' : 's'} · atualizada ${new Date(c.updatedAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })} `, saved));
+      }) : h('div', { class: 'empty' }, 'Nenhuma cápsula ainda. Crie uma para separar um trabalho, com logins e abas próprios.')));
+    };
+    return [h('h1', {}, 'Cápsulas'),
+      h('p', { class: 'sub' }, 'Grupos de abas com logins, cookies e anotações separados da navegação principal. Pausar fecha as abas e libera memória; retomar reabre de onde parou.'),
+      h('div', { class: 'tools' }, name, createBtn), box];
+  },
+
+  snapshots() {
+    const box = h('div');
+    const REASON = { manual: 'Manual', auto: 'Automático', 'ao fechar': 'Ao fechar' };
+    list = () => {
+      box.replaceChildren(h('div', { class: 'list' }, d.snapshots.length ? d.snapshots.map(s => h('div', { class: 'row' },
+        h('time', { style: 'width:auto;min-width:118px' }, new Date(s.t).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })),
+        h('div', { class: 'main' },
+          h('div', { class: 't' }, s.contexts.map(c => `${c.name} · ${c.count} aba${c.count === 1 ? '' : 's'}`).join('   |   ')),
+          h('div', { class: 'u' }, REASON[s.reason] ?? s.reason)),
+        h('button', { class: 'act go', title: 'Abre as abas deste momento ao lado das atuais', onclick: () => act('restoreSnapshot', s.id) }, 'Restaurar'),
+        xButton('Excluir snapshot', () => act('deleteSnapshot', s.id))))
+        : h('div', { class: 'empty' }, 'Nenhum snapshot ainda. Eles são salvos ao fechar o navegador, a cada 10 minutos (se algo mudou) ou quando você pedir.')));
+    };
+    return [h('h1', {}, 'Snapshots'),
+      h('p', { class: 'sub' }, `Volte a um conjunto de abas de antes. Restaurar abre as abas ao lado das atuais, sem fechar nada. Guardando os ${d.prefs.snapshotsMax} mais recentes; sessões efêmeras nunca entram.`),
+      h('div', { class: 'tools' }, h('button', { class: 'btn primary', onclick: () => act('snapshotNow') }, 'Salvar snapshot agora')), box];
+  },
+
   preferencias() {
     const seg = (key, options) => h('div', { class: 'seg', role: 'group' }, Object.entries(options).map(([value, label]) =>
-      h('button', { 'aria-pressed': d.prefs[key] === value, onclick: async () => { d = await call('setPref', { key, value }); render(); } }, label)));
+      h('button', { 'aria-pressed': String(d.prefs[key]) === value, onclick: async () => { d = await call('setPref', { key, value }); render(); } }, label)));
     const perms = h('div');
     const done = h('span', { class: 'ok' });
     list = () => {
@@ -110,6 +163,8 @@ const sections = {
         h('div', { class: 'setting' }, h('div', {}, 'Mecanismo de busca', h('p', {}, 'Usado na barra de endereço e na nova aba.')), seg('search', d.engines)),
         h('div', { class: 'setting' }, h('div', {}, 'Barra de favoritos', h('p', {}, 'Seus favoritos em guias abaixo da barra de endereço (Ctrl+Shift+B).')),
           seg('bookmarksBar', { show: 'Mostrar', hide: 'Ocultar' })),
+        h('div', { class: 'setting' }, h('div', {}, 'Snapshots guardados', h('p', {}, 'Os mais antigos saem quando passar do limite.')),
+          seg('snapshotsMax', { 10: '10', 20: '20', 50: '50', 100: '100' })),
         h('div', { class: 'setting' }, h('div', {}, 'Tema'), seg('theme', { system: 'Sistema', dark: 'Escuro', light: 'Claro' })),
         h('div', { class: 'setting' }, h('div', {}, 'Cor de destaque', h('p', {}, 'Abas, botões, estrela e foco.')), swatches())),
       h('h2', {}, 'Importar favoritos'), importBox(),

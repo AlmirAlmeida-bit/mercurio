@@ -47,20 +47,27 @@ const { pathToFileURL } = require('node:url');
 const { ElectronChromeExtensions } = require('electron-chrome-extensions');
 const { installChromeWebStore, uninstallExtension } = require('electron-chrome-web-store');
 const { toUrl, ENGINES } = require('./url');
+const store = require('./lib/store');
+const ctxs = require('./lib/contexts');
+const { createAudit } = require('./lib/audit');
+const snapshots = require('./lib/snapshots');
+const capsules = require('./lib/capsules');
 
 const BAR = 80;    // abas (40) + endereço (40)
 const PROMPT = 44; // faixa de permissão, quando visível
 const BMBAR = 32;  // barra de favoritos, quando visível
-const HOME = pathToFileURL(path.join(__dirname, 'home.html')).href;
-const PANEL = pathToFileURL(path.join(__dirname, 'panel.html')).href;
-const NOTICES = pathToFileURL(path.join(__dirname, 'THIRD-PARTY-NOTICES.txt')).href;
+const page = f => pathToFileURL(path.join(__dirname, f)).href;
+const HOME = page('home.html');
+const PANEL = page('panel.html');
+const AUDIT = page('audit.html');
+const NOTICES = page('THIRD-PARTY-NOTICES.txt');
 const STORE = 'https://chromewebstore.google.com/';
 const SITE = 'https://trestech.com.br/'; // botão Início
 const ICON = path.join(__dirname, 'assets', 'icon.png');
 const HISTORY_MAX = 5000;
+const SNAPSHOT_EVERY = 10 * 60 * 1000; // snapshot automático (só grava se algo mudou)
 
-// Permissões: liberadas sempre / perguntadas ao usuário / o resto é negado.
-const ALWAYS = new Set(['fullscreen', 'clipboard-sanitized-write']);
+// Permissões perguntadas ao usuário; o resto é negado (ver lib/contexts.js).
 const ASK = {
   media: d => {
     const t = d.mediaTypes ?? [];
@@ -73,33 +80,49 @@ const ASK = {
   midiSysex: () => 'controlar dispositivos MIDI',
 };
 
-let win, ses, extensions, decisionsFile, dataFile, saveTimer;
-let decisions = {}; // { origin: { permissão: true|false } }
-let data = { bookmarks: [], history: [], prefs: { search: 'duckduckgo', theme: 'system', accent: 'default', bookmarksBar: 'show' } };
+let win, ses, extensions, decisionsFile, dataStore, capStore, snapStore;
+let decisions = {}; // { origin: { permissão: true|false } } — contexto principal e cápsulas
+let data = { bookmarks: [], history: [], prefs: { search: 'duckduckgo', theme: 'system', accent: 'default', bookmarksBar: 'show', snapshotsMax: snapshots.DEFAULT_MAX } };
+let caps = [];      // cápsulas persistidas (lib/capsules.js)
+let snaps = [];     // snapshots (lib/snapshots.js)
 let pending = [];   // pedidos de permissão aguardando resposta
+
+// Contextos (lib/contexts.js). `tabs`/`active` apontam sempre para o contexto visível.
+const contexts = new Map();
+let main, ctx;
 let tabs = [];
 let active = -1;
 
 const cur = () => tabs[active]?.webContents;
-const originOf = u => { try { return new URL(u).origin; } catch { return null; } };
-const isExtension = u => String(u).startsWith('chrome-extension://');
 const isWeb = u => /^https?:/.test(u);
 const isPanel = u => String(u).startsWith(PANEL);
+const isAudit = u => String(u).startsWith(AUDIT);
+const isInternal = u => isPanel(u) || isAudit(u);
 const home = () => `${HOME}?e=${data.prefs.search}&a=${encodeURIComponent(data.prefs.accent)}`;
 const barVisible = () => data.prefs.bookmarksBar === 'show' && data.bookmarks.length > 0;
 const barItems = () => [...data.bookmarks].reverse(); // na barra: ordem em que foram adicionados
 const isAccent = v => v === 'default' || /^#[0-9a-f]{6}$/i.test(v);
+const save = () => dataStore.save();
+const ephemeral = () => [...contexts.values()].find(c => c.kind === 'ephemeral');
 
-// ponytail: um JSON único gravado com atraso de 500ms; trocar por SQLite se o histórico crescer muito
-function save() {
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => fs.writeFile(dataFile, JSON.stringify(data), () => {}), 500);
-}
+const globalDecisions = {
+  get: (o, p) => decisions[o]?.[p],
+  set: (o, p, v) => { (decisions[o] ??= {})[p] = v; saveDecisions(); },
+};
+const saveDecisions = () => store.writeJSON(decisionsFile, decisions);
 
 function shownUrl(u) {
   if (u.startsWith(HOME)) return '';
   if (isPanel(u)) return 'mercurio://painel';
+  if (isAudit(u)) return 'mercurio://auditoria';
   return u;
+}
+
+function tabTitle(wc) {
+  const u = wc.getURL();
+  if (isPanel(u)) return 'Painel';
+  if (isAudit(u)) return 'Auditoria';
+  return wc.getTitle() || 'Nova aba';
 }
 
 function sync() {
@@ -107,11 +130,12 @@ function sync() {
   const wc = cur();
   const url = wc?.getURL() ?? '';
   win.webContents.send('state', {
+    context: { kind: ctx.kind, name: ctx.name },
     tabs: tabs.map(v => ({
-      title: isPanel(v.webContents.getURL()) ? 'Painel' : v.webContents.getTitle() || 'Nova aba',
+      title: tabTitle(v.webContents),
       loading: v.webContents.isLoading(),
       favicon: v.favicon,
-      panel: isPanel(v.webContents.getURL()),
+      panel: isInternal(v.webContents.getURL()),
     })),
     active,
     accent: data.prefs.accent,
@@ -132,33 +156,53 @@ function layout() {
 }
 
 function select(i) {
-  active = i;
+  active = ctx.active = i;
   tabs.forEach((v, j) => v.setVisible(j === i));
   layout();
-  extensions.selectTab(tabs[i].webContents);
+  if (ctx === main) extensions.selectTab(tabs[i].webContents);
   sync();
 }
 
+// Troca o contexto visível. `seed` (abas guardadas) é aberto se o contexto estiver vazio.
+function switchContext(c, seed) {
+  if (c !== ctx) {
+    if (ctx) { ctx.active = active; ctx.tabs.forEach(v => v.setVisible(false)); }
+    ctx = c;
+    tabs = c.tabs;
+    active = c.active;
+  }
+  if (tabs.length) return select(Math.max(0, Math.min(active, tabs.length - 1)));
+  const saved = snapshots.restorableTabs(seed ?? {});
+  if (!saved.length) return newTab();
+  saved.forEach(t => newTab(t.url));
+  select(Math.max(0, Math.min(seed.active ?? 0, tabs.length - 1)));
+}
+
+// Abre uma aba no contexto visível.
 function newTab(url) {
-  url = url || extensions.getURLOverrides().newtab || home();
-  const panel = isPanel(url);
+  url = url || (ctx === main && extensions.getURLOverrides().newtab) || home();
+  const owner = ctx;
+  const internal = isInternal(url);
   const view = new WebContentsView({
     webPreferences: {
+      session: owner.ses,
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
-      // só a aba do painel recebe a ponte com o navegador
-      preload: panel ? path.join(__dirname, 'panel-preload.js') : undefined,
+      // só as páginas internas (painel, auditoria) recebem a ponte com o navegador
+      preload: internal ? path.join(__dirname, 'panel-preload.js') : undefined,
     },
   });
+  view.ctx = owner;
   const wc = view.webContents;
+  // pop-ups abrem como abas do mesmo contexto (uma cápsula não vaza para o principal)
   wc.setWindowOpenHandler(({ url }) => {
-    if (isWeb(url)) newTab(url);
+    if (isWeb(url)) { switchContext(owner); newTab(url); }
     return { action: 'deny' };
   });
-  if (panel) {
-    // a aba do painel nunca sai do painel: links abrem em aba nova
-    wc.on('will-navigate', (e, u) => { if (!isPanel(u)) { e.preventDefault(); if (isWeb(u)) newTab(u); } });
+  if (internal) {
+    // páginas internas nunca saem de si mesmas: links abrem em aba nova
+    wc.on('will-navigate', (e, u) => { if (!isInternal(u)) { e.preventDefault(); if (isWeb(u)) newTab(u); } });
   }
   wc.on('page-favicon-updated', (_e, icons) => {
     view.favicon = icons.find(i => i.startsWith('https:'));
@@ -167,11 +211,15 @@ function newTab(url) {
     sync();
   });
   wc.on('did-start-navigation', (_e, _u, inPage, isMain) => { if (isMain && !inPage) view.favicon = undefined; });
-  wc.on('did-navigate', (_e, u) => recordHistory(u, wc));
-  wc.on('page-title-updated', (_e, title) => {
-    const h = data.history[0];
-    if (h && h.url === wc.getURL()) { h.title = title; save(); }
-  });
+  if (owner === main) {
+    // histórico só da navegação principal: cápsulas e sessão efêmera não se misturam
+    wc.on('did-navigate', (_e, u) => recordHistory(u, wc));
+    wc.on('page-title-updated', (_e, title) => {
+      const h = data.history[0];
+      if (h && h.url === wc.getURL()) { h.title = title; save(); }
+    });
+  }
+  if (owner.audit) wc.on('did-navigate', (_e, u) => owner.audit.navigation(u));
   for (const ev of ['did-navigate', 'did-navigate-in-page', 'page-title-updated', 'did-start-loading', 'did-stop-loading']) {
     wc.on(ev, sync);
   }
@@ -179,24 +227,42 @@ function newTab(url) {
   shortcuts(wc);
   tabs.push(view);
   win.contentView.addChildView(view);
-  extensions.addTab(wc, win);
+  if (owner === main) extensions.addTab(wc, win);
   select(tabs.length - 1);
   wc.loadURL(url);
   return view;
 }
 
-function closeTab(i) {
-  const [v] = tabs.splice(i, 1);
-  // pedidos de permissão da aba fechada são negados
-  pending = pending.filter(p => p.wc !== v.webContents || p.cb(false));
+// Nega pedidos de permissão que casam com `pred` (ex.: de uma aba que fechou).
+function dropPending(pred) {
+  const before = pending.length;
+  pending = pending.filter(p => !pred(p) || p.cb(false));
+  if (pending.length !== before) layout();
+}
+
+function closeView(v) {
+  dropPending(p => p.wc === v.webContents);
   win.contentView.removeChildView(v);
   v.webContents.close();
-  if (!tabs.length) return newTab();
+}
+
+function closeTab(i) {
+  const [v] = tabs.splice(i, 1);
+  closeView(v);
+  if (!tabs.length) return ctx.kind === 'ephemeral' ? endEphemeral() : newTab();
   if (i < active) active--;
   select(Math.min(active, tabs.length - 1));
 }
 
+// Fecha todas as abas de um contexto (pausar cápsula, encerrar efêmera).
+function closeContextViews(c) {
+  for (const v of c.tabs) closeView(v);
+  c.tabs.length = 0;
+  c.active = -1;
+}
+
 function openPanel(section = 'favoritos') {
+  switchContext(main); // o painel sempre vive no contexto principal
   const i = tabs.findIndex(v => isPanel(v.webContents.getURL()));
   if (i < 0) return newTab(`${PANEL}#${section}`);
   tabs[i].webContents.loadURL(`${PANEL}#${section}`);
@@ -222,25 +288,206 @@ function toggleBookmark() {
   sync();
 }
 
+// ---- permissões ----
+
+function onAsk(req) {
+  if (!ASK[req.perm] || !req.origin) return req.cb(false);
+  const owner = [...contexts.values()].find(c => c.tabs.some(v => v.webContents === req.wc));
+  const where = owner && owner !== main ? ` (${owner.name})` : '';
+  pending.push({ ...req, label: ASK[req.perm](req.details) + where });
+  if (pending.length === 1) { layout(); sync(); }
+}
+
 function answerPermission(allow) {
   const p = pending[0];
   if (!p) return;
-  (decisions[p.origin] ??= {})[p.perm] = allow;
-  saveDecisions();
-  // resolve também pedidos repetidos do mesmo site/permissão
-  pending = pending.filter(q => !(q.origin === p.origin && q.perm === p.perm) || q.cb(allow));
+  p.decisions.set(p.origin, p.perm, allow);
+  // resolve também pedidos repetidos do mesmo site/permissão/sessão
+  pending = pending.filter(q => !(q.decisions === p.decisions && q.origin === p.origin && q.perm === p.perm) || q.cb(allow));
   layout();
   sync();
 }
 
-const saveDecisions = () => fs.writeFileSync(decisionsFile, JSON.stringify(decisions, null, 2));
+// ---- sessão efêmera auditável ----
+
+function openEphemeral() {
+  let e = ephemeral();
+  if (!e) {
+    e = ctxs.createContext('ephemeral', 'Sessão efêmera');
+    ctxs.harden(e.ses, ctxs.memoryDecisions(), onAsk); // decisões de permissão também só na memória
+    e.audit = createAudit(e.ses);
+    contexts.set(e.id, e);
+  }
+  switchContext(e);
+}
+
+function openAudit() {
+  const e = ephemeral();
+  if (!e) return;
+  switchContext(e);
+  const i = tabs.findIndex(v => isAudit(v.webContents.getURL()));
+  if (i >= 0) select(i); else newTab(AUDIT);
+}
+
+// Fecha as abas, remove os ganchos de rede, descarta o registro e apaga os dados da sessão.
+async function endEphemeral() {
+  const e = ephemeral();
+  if (!e) return;
+  if (ctx === e) switchContext(main);
+  closeContextViews(e);
+  e.audit.dispose();
+  contexts.delete(e.id);
+  sync();
+  await ctxs.wipe(e.ses);
+}
+
+const auditActions = {
+  get: () => {
+    const e = ephemeral();
+    return e ? { startedAt: e.audit.startedAt, events: e.audit.events } : null;
+  },
+  export: async () => {
+    const e = ephemeral();
+    if (!e) return false;
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    const { canceled, filePath } = await dialog.showSaveDialog(win, {
+      title: 'Exportar auditoria',
+      defaultPath: `auditoria-mercurio-${stamp}.json`,
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    });
+    if (canceled || !filePath) return false;
+    const report = { app: `Mercurio ${app.getVersion()}`, startedAt: e.audit.startedAt, exportedAt: Date.now(), events: e.audit.events };
+    fs.writeFileSync(filePath, JSON.stringify(report, null, 2));
+    return true;
+  },
+  end: () => endEphemeral(),
+};
+
+// ---- cápsulas de contexto ----
+
+// Estado atual de um contexto, no formato que lib/snapshots.js entende.
+const describe = c => ({
+  kind: c.kind, id: c.id, name: c.name,
+  active: c === ctx ? active : c.active,
+  tabs: c.tabs.map(v => ({ url: v.webContents.getURL(), title: v.webContents.getTitle() })),
+});
+
+// Guarda as abas abertas de uma cápsula viva no capsules.json.
+function storeCapsuleTabs(c) {
+  const s = snapshots.serialize([describe(c)])[0];
+  capsules.update(caps, c.id, { tabs: s?.tabs ?? [], active: Math.max(0, s?.active ?? 0) });
+  capStore.save();
+}
+
+function createCapsule(name) {
+  const cap = capsules.create(caps, name);
+  capStore.save();
+  resumeCapsule(cap.id);
+  return cap;
+}
+
+function resumeCapsule(id) {
+  const cap = capsules.find(caps, id);
+  if (!cap) throw new Error('Cápsula não encontrada');
+  let c = contexts.get(id);
+  if (!c) {
+    c = ctxs.createContext('capsule', cap.name, cap.id);
+    ctxs.harden(c.ses, globalDecisions, onAsk);
+    contexts.set(id, c);
+  }
+  switchContext(c, cap);
+}
+
+// Pausar = guardar as abas e fechá-las de verdade (libera memória). Os logins ficam na partição.
+function pauseCapsule(id) {
+  const c = contexts.get(id);
+  if (!c || c.kind !== 'capsule') return;
+  storeCapsuleTabs(c);
+  if (ctx === c) switchContext(main);
+  closeContextViews(c);
+  contexts.delete(id);
+  sync();
+}
+
+async function deleteCapsule(id) {
+  const c = contexts.get(id);
+  if (c) {
+    if (ctx === c) switchContext(main);
+    closeContextViews(c);
+    contexts.delete(id);
+  }
+  caps = capsules.remove(caps, id);
+  capStore.save();
+  sync();
+  await ctxs.wipe(session.fromPartition(ctxs.partitionOf('capsule', id))); // cookies, logins e cache da cápsula
+}
+
+function renameCapsule(id, name) {
+  const cap = capsules.update(caps, id, { name });
+  const c = contexts.get(id);
+  if (c) c.name = cap.name;
+  capStore.save();
+  sync();
+}
+
+// ---- snapshots de sessão ----
+
+function takeSnapshot(reason) {
+  const r = snapshots.addSnapshot(snaps, snapshots.serialize([...contexts.values()].map(describe)), reason, data.prefs.snapshotsMax);
+  snaps = r.list;
+  if (r.added) snapStore.save();
+  return r.added;
+}
+
+// Restaura "ao lado": as abas do snapshot são abertas junto com as atuais.
+function restoreSnapshot(id) {
+  const s = snaps.find(x => x.id === id);
+  if (!s) throw new Error('Snapshot não encontrado');
+  for (const c of s.contexts) {
+    const saved = snapshots.restorableTabs(c);
+    if (!saved.length) continue;
+    if (c.kind === 'capsule') {
+      // a cápsula pode ter sido excluída depois do snapshot: recria com o mesmo nome
+      const cap = capsules.find(caps, c.id) ?? capsules.create(caps, c.name);
+      capStore.save();
+      resumeCapsule(cap.id);
+    } else {
+      switchContext(main);
+    }
+    saved.forEach(t => newTab(t.url));
+  }
+}
+
+// ---- menu de contextos (botão "● Principal ▾") ----
+
+function contextsMenu(pos) {
+  const eph = ephemeral();
+  const live = caps.filter(c => contexts.has(c.id));
+  const paused = caps.filter(c => !contexts.has(c.id));
+  const radio = (label, c) => ({ label, type: 'radio', checked: ctx === c, click: () => switchContext(c) });
+  const t = [radio('Principal', main), ...live.map(cap => radio(`◆  ${cap.name}`, contexts.get(cap.id)))];
+  if (eph) t.push(radio('◌  Sessão efêmera', eph));
+  t.push({ type: 'separator' });
+  if (paused.length) t.push({ label: 'Retomar cápsula', submenu: paused.map(cap => ({ label: cap.name, click: () => resumeCapsule(cap.id) })) });
+  t.push({ label: 'Nova cápsula', click: () => createCapsule() });
+  if (ctx.kind === 'capsule') t.push({ label: `Pausar "${ctx.name}"`, click: () => pauseCapsule(ctx.id) });
+  t.push({ label: 'Gerenciar cápsulas…', click: () => openPanel('capsulas') }, { type: 'separator' });
+  if (eph) t.push({ label: 'Ver auditoria', click: openAudit }, { label: 'Encerrar sessão efêmera', click: endEphemeral });
+  else t.push({ label: 'Nova sessão efêmera', accelerator: 'CmdOrCtrl+Shift+N', click: openEphemeral });
+  t.push({ type: 'separator' },
+    { label: 'Salvar snapshot agora', click: () => takeSnapshot('manual') },
+    { label: 'Snapshots…', click: () => openPanel('snapshots') });
+  const x = Number(pos?.x), y = Number(pos?.y);
+  Menu.buildFromTemplate(t).popup({ window: win, x: Number.isFinite(x) ? Math.round(x) : 0, y: Number.isFinite(y) ? Math.round(y) : 40 });
+}
 
 const commands = {
   go: s => {
     s = String(s).trim();
     if (/^mercurio:\/\/(painel|settings)/i.test(s)) return openPanel();
+    if (/^mercurio:\/\/auditoria/i.test(s)) return openAudit();
     const url = toUrl(s, data.prefs.search);
-    isPanel(cur()?.getURL()) ? newTab(url) : cur()?.loadURL(url);
+    isInternal(cur()?.getURL()) ? newTab(url) : cur()?.loadURL(url);
   },
   back: () => cur()?.navigationHistory.goBack(),
   forward: () => cur()?.navigationHistory.goForward(),
@@ -248,6 +495,10 @@ const commands = {
   home: () => commands.go(SITE),
   newTab: () => newTab(),
   panel: () => openPanel(),
+  contexts: pos => contextsMenu(pos),
+  ephemeral: openEphemeral,
+  endEphemeral: () => endEphemeral(),
+  audit: openAudit,
   bookmark: toggleBookmark,
   open: url => isWeb(url) && commands.go(url),
   openTab: url => isWeb(url) && newTab(url),
@@ -271,7 +522,7 @@ const commands = {
   permission: allow => answerPermission(allow === true),
 };
 
-// ---- painel (favoritos, histórico, extensões, preferências) ----
+// ---- painel (favoritos, histórico, extensões, cápsulas, snapshots, preferências) ----
 
 // Traduz nomes "__MSG_x__" das extensões usando os _locales delas.
 function extMsg(ext, s) {
@@ -378,6 +629,18 @@ function panelData() {
       description: extMsg(x, x.manifest.description),
       icon: extIcon(x),
     })),
+    capsules: caps.map(c => {
+      const live = contexts.get(c.id);
+      return {
+        id: c.id, name: c.name, notes: c.notes, updatedAt: c.updatedAt,
+        live: !!live, current: live === ctx,
+        tabCount: live ? live.tabs.filter(v => isWeb(v.webContents.getURL())).length : c.tabs.length,
+      };
+    }),
+    snapshots: snaps.map(s => ({
+      id: s.id, t: s.t, reason: s.reason,
+      contexts: s.contexts.map(c => ({ kind: c.kind, name: c.name, count: c.tabs.length })),
+    })),
   };
 }
 
@@ -391,6 +654,11 @@ const panelActions = {
     if (key === 'theme' && ['system', 'dark', 'light'].includes(value)) nativeTheme.themeSource = data.prefs.theme = value;
     if (key === 'accent' && isAccent(value)) data.prefs.accent = value;
     if (key === 'bookmarksBar' && ['show', 'hide'].includes(value)) data.prefs.bookmarksBar = value;
+    if (key === 'snapshotsMax') {
+      data.prefs.snapshotsMax = snapshots.clampMax(value);
+      snaps = snaps.slice(0, data.prefs.snapshotsMax);
+      snapStore.save();
+    }
     save();
     layout();
     sync();
@@ -405,15 +673,30 @@ const panelActions = {
   store: () => newTab(STORE),
   notices: () => newTab(NOTICES),
   importBookmarks: id => importBookmarks(String(id)),
+  createCapsule: name => { createCapsule(name); },
+  renameCapsule: ({ id, name }) => renameCapsule(String(id), name),
+  noteCapsule: ({ id, notes }) => { capsules.update(caps, String(id), { notes }); capStore.save(); },
+  resumeCapsule: id => resumeCapsule(String(id)),
+  pauseCapsule: id => pauseCapsule(String(id)),
+  deleteCapsule: id => deleteCapsule(String(id)),
+  snapshotNow: () => { takeSnapshot('manual'); },
+  restoreSnapshot: id => restoreSnapshot(String(id)),
+  deleteSnapshot: id => { snaps = snaps.filter(s => s.id !== id); snapStore.save(); },
 };
 
+// Única porta das páginas internas para o processo principal; a origem do remetente decide o que pode.
 ipcMain.handle('panel', async (e, name, arg) => {
-  if (!isPanel(e.senderFrame?.url)) throw new Error('negado'); // só o painel local fala com isto
-  await panelActions[name]?.(arg);
-  return panelData();
+  const url = e.senderFrame?.url;
+  if (isPanel(url)) {
+    if (!panelActions[name]) throw new Error('ação desconhecida');
+    await panelActions[name](arg);
+    return panelData();
+  }
+  if (isAudit(url) && auditActions[name]) return auditActions[name](arg);
+  throw new Error('negado');
 });
 
-// ---- menu, atalhos, permissões, extensões ----
+// ---- menu, atalhos, extensões ----
 
 function contextMenu(wc, p) {
   const t = [];
@@ -431,7 +714,7 @@ function contextMenu(wc, p) {
     { label: 'Avançar', enabled: wc.navigationHistory.canGoForward(), click: () => wc.navigationHistory.goForward() },
     { label: 'Recarregar', click: () => wc.reload() });
   const menu = Menu.buildFromTemplate(t);
-  const ext = extensions.getContextMenuItems(wc, p);
+  const ext = wc.session === ses ? extensions.getContextMenuItems(wc, p) : [];
   if (ext.length) menu.append(new MenuItem({ type: 'separator' }));
   for (const item of ext) menu.append(item);
   menu.append(new MenuItem({ type: 'separator' }));
@@ -445,7 +728,8 @@ function shortcuts(wc) {
     const ctrl = input.control || input.meta;
     const k = input.key.toLowerCase();
     let fn;
-    if (ctrl && k === 't') fn = () => newTab();
+    if (ctrl && input.shift && k === 'n') fn = openEphemeral;
+    else if (ctrl && k === 't') fn = () => newTab();
     else if (ctrl && k === 'w') fn = () => closeTab(active);
     else if (ctrl && k === 'l') fn = () => { win.webContents.focus(); win.webContents.send('focus-url'); };
     else if ((ctrl && k === 'r') || k === 'f5') fn = commands.reload;
@@ -459,28 +743,19 @@ function shortcuts(wc) {
   });
 }
 
-function setupPermissions() {
-  ses.setPermissionRequestHandler((wc, perm, cb, details) => {
-    const origin = originOf(details.requestingUrl);
-    if (ALWAYS.has(perm) || isExtension(origin)) return cb(true); // extensões já declaram permissões no manifest
-    if (!ASK[perm] || !origin) return cb(false);
-    const saved = decisions[origin]?.[perm];
-    if (saved !== undefined) return cb(saved);
-    pending.push({ origin, perm, label: ASK[perm](details), cb, wc });
-    if (pending.length === 1) { layout(); sync(); }
-  });
-  ses.setPermissionCheckHandler((_wc, perm, origin) =>
-    ALWAYS.has(perm) || isExtension(origin) || decisions[originOf(origin)]?.[perm] === true);
+// As extensões vivem só no contexto principal.
+function mainTabIndex(wc) {
+  return main.tabs.findIndex(v => v.webContents === wc);
 }
 
 async function setupExtensions() {
   extensions = new ElectronChromeExtensions({
     session: ses,
-    createTab: async details => [newTab(details.url).webContents, win],
-    selectTab: wc => { const i = tabs.findIndex(v => v.webContents === wc); if (i >= 0) select(i); },
-    removeTab: wc => { const i = tabs.findIndex(v => v.webContents === wc); if (i >= 0) closeTab(i); },
+    createTab: async details => { switchContext(main); return [newTab(details.url).webContents, win]; },
+    selectTab: wc => { const i = mainTabIndex(wc); if (i >= 0) { switchContext(main); select(i); } },
+    removeTab: wc => { const i = mainTabIndex(wc); if (i >= 0) { switchContext(main); closeTab(i); } },
     // ponytail: janela única; chrome.windows.create abre as URLs como abas
-    createWindow: async details => { [].concat(details.url ?? []).forEach(u => newTab(u)); return win; },
+    createWindow: async details => { switchContext(main); [].concat(details.url ?? []).forEach(u => newTab(u)); return win; },
   });
 
   // Instala/atualiza extensões direto da Chrome Web Store, com confirmação.
@@ -513,14 +788,27 @@ app.on('web-contents-created', (_, wc) => {
 });
 
 app.whenReady().then(async () => {
-  ses = session.defaultSession;
   const dir = app.getPath('userData');
   decisionsFile = path.join(dir, 'permissions.json');
-  dataFile = path.join(dir, 'data.json');
-  try { decisions = JSON.parse(fs.readFileSync(decisionsFile, 'utf8')); } catch {}
-  try { const d = JSON.parse(fs.readFileSync(dataFile, 'utf8')); data = { ...data, ...d, prefs: { ...data.prefs, ...d.prefs } }; } catch {}
+  const dataFile = path.join(dir, 'data.json');
+  const capsFile = path.join(dir, 'capsules.json');
+  const snapsFile = path.join(dir, 'snapshots.json');
+  decisions = store.readJSON(decisionsFile, {});
+  const d = store.readJSON(dataFile, {});
+  data = { ...data, ...d, prefs: { ...data.prefs, ...d.prefs } };
+  caps = store.readJSON(capsFile, []);
+  snaps = store.readJSON(snapsFile, []);
+  dataStore = store.debounced(dataFile, () => data);
+  capStore = store.debounced(capsFile, () => caps);
+  snapStore = store.debounced(snapsFile, () => snaps);
   nativeTheme.themeSource = data.prefs.theme;
-  setupPermissions();
+
+  main = ctxs.createContext('main', 'Principal', 'main');
+  ses = main.ses;
+  contexts.set(main.id, main);
+  ctx = main;
+  tabs = main.tabs;
+  ctxs.harden(ses, globalDecisions, onAsk);
 
   win = new BrowserWindow({
     width: 1280,
@@ -556,12 +844,22 @@ app.whenReady().then(async () => {
   await win.loadFile('ui.html');
   newTab();
   win.show();
+  setInterval(() => takeSnapshot('auto'), SNAPSHOT_EVERY);
   firstRunNotice();
 });
 
+// Ao sair: guarda as abas das cápsulas abertas (voltam pausadas), tira um snapshot e grava tudo.
 app.on('before-quit', () => {
-  clearTimeout(saveTimer);
-  fs.writeFileSync(dataFile, JSON.stringify(data));
+  if (!main) return;
+  try {
+    for (const c of contexts.values()) if (c.kind === 'capsule') storeCapsuleTabs(c);
+    takeSnapshot('ao fechar');
+  } catch (err) {
+    console.error('Falha ao salvar sessão', err);
+  }
+  dataStore.flush();
+  capStore.flush();
+  snapStore.flush();
 });
 
 app.on('window-all-closed', () => app.quit());

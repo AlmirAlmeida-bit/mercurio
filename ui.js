@@ -56,8 +56,16 @@ function fitBookmarks() {
 }
 addEventListener('resize', fitBookmarks);
 
+$('ctx').onclick = () => {
+  const r = $('ctx').getBoundingClientRect();
+  cmd('contexts', { x: r.left, y: r.bottom + 4 });
+};
+
 onState(s => {
   applyAccent(s.accent);
+  document.body.dataset.kind = s.context.kind;
+  $('ctx').querySelector('span').textContent = s.context.name;
+  $('ctx').setAttribute('aria-label', `Contexto atual: ${s.context.name}`);
   $('tabs').replaceChildren(...s.tabs.map((t, i) => {
     const el = document.createElement('div');
     el.className = 'tab' + (i === s.active ? ' on' : '');
