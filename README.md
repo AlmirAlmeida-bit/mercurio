@@ -38,4 +38,4 @@ npm start
 
 ## Trocar o logo
 
-Substitua `logo.png` (medalhão circular no centro da arte) e rode `npm run icon`. Se o círculo mudar de posição ou tamanho, ajuste `CIRCLE` em `scripts/icon.js`.
+Substitua `logo.png` (de preferência com fundo transparente e pelo menos 512px) e rode `npm run icon`. O logo é usado inteiro dentro do app, e o ícone do aplicativo o coloca sobre fundo preto.

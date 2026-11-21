@@ -50,9 +50,9 @@ Usa **Electron 45** (motor Chromium 156), é compatível com extensões da Chrom
 | `offline.html` / `offline.js` | Página "sem internet" com o joguinho (canvas, sem imagens nem bibliotecas) |
 | `accent.js` | Aplica a cor de destaque (usado pela barra, painel e nova aba) |
 | `url.js` | Converte o que foi digitado em endereço ou busca. Tem autoteste: `npm test` |
-| `logo.png` | Arte original do logo (símbolo ☿ num medalhão circular, fundo "Matrix"), trocada em 21/11/2026 |
+| `logo.png` | Arte original do logo: ☿ estilizado em traços neon (verde/ciano/magenta), fundo transparente. Trocado em 21/11/2026 (o atual tem só 257×288 px; um maior deixa o ícone mais nítido) |
 | `assets/logo.png`, `assets/icon.png` | Gerados a partir do `logo.png` por `npm run icon` |
-| `scripts/icon.js` | Recorta o medalhão em círculo (logo dentro do app) e faz o ícone do app (arte inteira, cantos arredondados). Se a arte mudar, ajustar `CIRCLE` |
+| `scripts/icon.js` | Encaixa o logo inteiro (sem cortar) num quadrado transparente para uso no app, e faz o ícone do app com o logo sobre fundo preto |
 | `scripts/notices.js` | Gera o `THIRD-PARTY-NOTICES.txt` |
 | `.github/workflows/build.yml` | GitHub Actions: gera instaladores de Windows, Mac e Linux |
 
