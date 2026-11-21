@@ -5,13 +5,12 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; img-src 'self'; style-src 'unsafe-inline'; form-action https://duckduckgo.com https://www.google.com https://www.bing.com https://search.brave.com">
 <title>Nova aba</title>
 <style>
-  :root { --bg: #0f1013; --glow: #1d1f25; --fg: #e8e9ec; --dim: #7d808a; --field: #17181c; --line: #2a2c33; }
-  @media (prefers-color-scheme: light) {
-    :root { --bg: #eceef1; --glow: #ffffff; --fg: #1a1b1f; --dim: #6b6f78; --field: #ffffff; --line: #d6d9df; }
-  }
+  /* A nova aba é sempre preta (também no tema claro). --halo é o leve brilho atrás do logo;
+     não usar --glow aqui: esse nome é do brilho neon (accent.js). */
+  :root { color-scheme: dark; --bg: #000000; --halo: #0d0e12; --fg: #e8e9ec; --dim: #7d808a; --field: #0b0c0f; --line: #23252b; }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
-  body { display: grid; place-items: center; background: radial-gradient(ellipse at 50% 30%, var(--glow), var(--bg) 60%);
+  body { display: grid; place-items: center; background: radial-gradient(ellipse at 50% 30%, var(--halo), var(--bg) 60%);
          color: var(--fg); font: 15px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; }
   main { display: flex; flex-direction: column; align-items: center; width: min(560px, 100% - 32px); margin-top: -4vh; }
   img { width: min(260px, 34vh); height: auto; aspect-ratio: 1; }
