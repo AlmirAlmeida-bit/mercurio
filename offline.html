@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; img-src 'self'; style-src 'unsafe-inline'">
+<title>Sem internet</title>
+<style>
+  :root { --bg: #0f1013; --fg: #e8e9ec; --dim: #80838d; --line: #2a2c33; --obstacle: #5b5f69; --drop1: #ffffff; --drop2: #8a909c; --wing: #f2b33d; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f3f4f6; --fg: #1a1b1f; --dim: #6b6f78; --line: #d0d3d9; --obstacle: #9ca1aa; --drop1: #d9dde3; --drop2: #4a4f59; --wing: #d4921a; }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { display: grid; place-items: center; background: var(--bg); color: var(--fg); user-select: none;
+         font: 15px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; }
+  main { width: min(820px, 100% - 32px); text-align: center; }
+  h1 { margin: 0 0 6px; font: 300 24px "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif; }
+  p { margin: 0; color: var(--dim); }
+  canvas { display: block; width: 100%; aspect-ratio: 800 / 220; margin: 28px 0 14px; cursor: pointer; touch-action: manipulation; }
+  canvas:focus-visible { outline: 2px solid var(--dim); outline-offset: 6px; border-radius: 6px; }
+  small { color: var(--dim); }
+</style>
+</head>
+<body>
+  <main>
+    <h1>Enquanto sua internet não volta, aproveite</h1>
+    <p id="status">Sem conexão. Assim que a internet voltar, a página abre sozinha.</p>
+    <canvas id="game" width="800" height="220" tabindex="0" aria-label="Jogo: pressione espaço ou clique para pular"></canvas>
+    <small>Espaço, ↑ ou clique para pular</small>
+  </main>
+  <script src="offline.js"></script>
+</body>
+</html>

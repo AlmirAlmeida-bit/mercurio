@@ -27,6 +27,7 @@ Usa **Electron 45** (motor Chromium 156), é compatível com extensões da Chrom
 | Cápsulas | Abas + sessão própria (`persist:capsula-<id>`) + anotações, com nome. Pausar fecha as abas (libera memória) e guarda as URLs; retomar reabre já logado; excluir apaga os dados. Ao fechar o navegador, as cápsulas voltam pausadas. Painel → Cápsulas |
 | Snapshots | Retrato das abas (Principal + cápsulas, nunca a efêmera). Manual, a cada 10 min se algo mudou, e ao fechar. Limite 10/20/50/100 (Preferências). Restaurar abre ao lado. Painel → Snapshots |
 | Sessão efêmera | `Ctrl+Shift+N`. Sessão só em memória, sem extensões nem histórico; página Auditoria (`mercurio://auditoria`) mostra navegações e requisições ao vivo (até 2.000), com Exportar JSON. Encerrar apaga abas, cookies, cache e o registro |
+| Sem internet | Quando uma página falha por falta de internet (`ERR_INTERNET_DISCONNECTED` ou `net.isOnline()` falso), a aba mostra `offline.html`: "Enquanto sua internet não volta, aproveite" + jogo original (gota de mercúrio alada pulando torres e nuvens; espaço/↑/clique; recorde salvo). A barra mostra o site original e a página volta sozinha quando a conexão retorna |
 | Preferências | Buscador (DuckDuckGo, Google, Bing, Brave), tema (sistema/escuro/claro), **cor de destaque**, limpar cookies/cache |
 | Aviso de direitos | Janela "© TresTech" com link para o site, na 1ª abertura **após cada instalação** |
 | Licenças | `THIRD-PARTY-NOTICES.txt` abre por Painel → Preferências → Sobre → "Licenças de terceiros" |
@@ -46,6 +47,7 @@ Usa **Electron 45** (motor Chromium 156), é compatível com extensões da Chrom
 | `lib/audit.js` | Registro em memória da sessão efêmera (rede + navegação) |
 | `lib/store.js` | Gravação atômica de JSON (temporário + rename) |
 | `audit.html` / `audit.js` | Página de auditoria da sessão efêmera |
+| `offline.html` / `offline.js` | Página "sem internet" com o joguinho (canvas, sem imagens nem bibliotecas) |
 | `accent.js` | Aplica a cor de destaque (usado pela barra, painel e nova aba) |
 | `url.js` | Converte o que foi digitado em endereço ou busca. Tem autoteste: `npm test` |
 | `logo.png` | Arte original do logo (símbolo ☿ num medalhão circular, fundo "Matrix"), trocada em 21/11/2026 |

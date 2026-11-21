@@ -40,7 +40,7 @@
  * Para atualizar esta lista após mudar dependências:
  *   npm ls --omit=dev --all
  */
-const { app, BrowserWindow, WebContentsView, Menu, MenuItem, clipboard, dialog, ipcMain, nativeImage, nativeTheme, session } = require('electron');
+const { app, BrowserWindow, WebContentsView, Menu, MenuItem, clipboard, dialog, ipcMain, nativeImage, nativeTheme, net, session } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
@@ -60,6 +60,9 @@ const page = f => pathToFileURL(path.join(__dirname, f)).href;
 const HOME = page('home.html');
 const PANEL = page('panel.html');
 const AUDIT = page('audit.html');
+const OFFLINE = page('offline.html');
+const NO_INTERNET = -106; // net::ERR_INTERNET_DISCONNECTED
+const ABORTED = -3;       // net::ERR_ABORTED (navegação cancelada, não é erro de rede)
 const NOTICES = page('THIRD-PARTY-NOTICES.txt');
 const STORE = 'https://chromewebstore.google.com/';
 const SITE = 'https://trestech.com.br/'; // botão Início
@@ -115,6 +118,7 @@ function shownUrl(u) {
   if (u.startsWith(HOME)) return '';
   if (isPanel(u)) return 'mercurio://painel';
   if (isAudit(u)) return 'mercurio://auditoria';
+  if (u.startsWith(OFFLINE)) return new URL(u).searchParams.get('u') ?? ''; // mostra o site que não abriu
   return u;
 }
 
@@ -211,6 +215,11 @@ function newTab(url) {
     sync();
   });
   wc.on('did-start-navigation', (_e, _u, inPage, isMain) => { if (isMain && !inPage) view.favicon = undefined; });
+  // sem internet: mostra o joguinho no lugar do erro; a página volta sozinha quando a conexão retorna
+  wc.on('did-fail-load', (_e, code, _desc, failed, isMain) => {
+    if (!isMain || !isWeb(failed) || code === ABORTED) return;
+    if (code === NO_INTERNET || !net.isOnline()) wc.loadURL(`${OFFLINE}?u=${encodeURIComponent(failed)}`);
+  });
   if (owner === main) {
     // histórico só da navegação principal: cápsulas e sessão efêmera não se misturam
     wc.on('did-navigate', (_e, u) => recordHistory(u, wc));
