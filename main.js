@@ -53,6 +53,7 @@ const PROMPT = 44; // faixa de permissão, quando visível
 const BMBAR = 32;  // barra de favoritos, quando visível
 const HOME = pathToFileURL(path.join(__dirname, 'home.html')).href;
 const PANEL = pathToFileURL(path.join(__dirname, 'panel.html')).href;
+const NOTICES = pathToFileURL(path.join(__dirname, 'THIRD-PARTY-NOTICES.txt')).href;
 const STORE = 'https://chromewebstore.google.com/';
 const SITE = 'https://trestech.com.br/'; // botão Início
 const ICON = path.join(__dirname, 'assets', 'icon.png');
@@ -335,6 +336,7 @@ const panelActions = {
   uninstall: id => uninstallExtension(String(id), { session: ses }),
   clearData: async () => { await ses.clearStorageData(); await ses.clearCache(); },
   store: () => newTab(STORE),
+  notices: () => newTab(NOTICES),
 };
 
 ipcMain.handle('panel', async (e, name, arg) => {

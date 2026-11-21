@@ -124,7 +124,8 @@ const sections = {
       h('div', { class: 'list' }, h('div', { class: 'about' }, h('img', { src: 'assets/logo.png', alt: '' }),
         h('div', {}, h('div', {}, `Mercurio ${d.version}`),
           h('p', { class: 'u', style: 'margin:4px 0 0;color:var(--dim)' }, `© ${new Date().getFullYear()} TresTech. Todos os direitos reservados. `,
-            h('a', { href: 'https://trestech.com.br', target: '_blank' }, 'trestech.com.br'))))),
+            h('a', { href: 'https://trestech.com.br', target: '_blank' }, 'trestech.com.br'), ' · ',
+            h('a', { href: '#', onclick: e => { e.preventDefault(); call('notices'); } }, 'Licenças de terceiros'))))),
     ];
   },
 };
