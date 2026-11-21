@@ -1,20 +1,5 @@
-// Página "sem internet": jogo simples (a gota de mercúrio alada pula torres e nuvens)
-// e volta sozinha para o site quando a conexão retorna.
-
-// ---- volta para o site quando a internet voltar ----
-// Não usa navigator.onLine (adaptadores virtuais o deixam sempre "online"): tenta alcançar o site de verdade.
-const target = new URLSearchParams(location.search).get('u') ?? '';
-async function tryBack() {
-  if (!/^https?:\/\//.test(target)) return; // só http/https
-  try {
-    await fetch(target, { mode: 'no-cors', cache: 'no-store', signal: AbortSignal.timeout(4000) });
-    location.replace(target);
-  } catch { /* ainda sem internet */ }
-}
-addEventListener('online', tryBack);
-setInterval(tryBack, 5000);
-
-// ---- jogo ----
+// Página "sem internet": jogo simples (a gota de mercúrio alada pula torres e nuvens).
+// A volta para o site quando a internet retorna é feita pelo processo principal (main.js: watchOffline).
 const canvas = document.getElementById('game');
 const g = canvas.getContext('2d');
 const W = 800, H = 220, GROUND = 186;

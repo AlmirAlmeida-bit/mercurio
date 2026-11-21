@@ -220,7 +220,10 @@ function newTab(url) {
   wc.on('did-fail-load', async (_e, code, _desc, failed, isMain) => {
     if (!isMain || !isWeb(failed) || !NETWORK_ERRORS.has(code)) return;
     if (code !== NO_INTERNET && await hasInternet({ fetch: net.fetch })) return; // tem internet: era endereço errado
-    if (!wc.isDestroyed() && wc.getURL() === failed) wc.loadURL(`${OFFLINE}?u=${encodeURIComponent(failed)}`);
+    if (!wc.isDestroyed() && wc.getURL() === failed) {
+      wc.loadURL(`${OFFLINE}?u=${encodeURIComponent(failed)}`);
+      watchOffline();
+    }
   });
   if (owner === main) {
     // histórico só da navegação principal: cápsulas e sessão efêmera não se misturam
@@ -242,6 +245,27 @@ function newTab(url) {
   select(tabs.length - 1);
   wc.loadURL(url);
   return view;
+}
+
+// Enquanto houver aba no jogo offline, testa a conexão; quando voltar, reabre o site em cada uma.
+// Limpa o cache de DNS antes: o Chromium lembra por um tempo que "o endereço não existe".
+let offlineTimer = null;
+function watchOffline() {
+  if (offlineTimer) return;
+  offlineTimer = setInterval(async () => {
+    const waiting = [...contexts.values()].flatMap(c => c.tabs).filter(v => v.webContents.getURL().startsWith(OFFLINE));
+    if (!waiting.length) { clearInterval(offlineTimer); offlineTimer = null; return; }
+    await ses.clearHostResolverCache();
+    if (!(await hasInternet({ fetch: net.fetch }))) return;
+    for (const v of waiting) {
+      const wc = v.webContents;
+      if (wc.isDestroyed() || !wc.getURL().startsWith(OFFLINE)) continue;
+      const target = new URL(wc.getURL()).searchParams.get('u');
+      if (!isWeb(target)) continue; // só http/https
+      await wc.session.clearHostResolverCache(); // a aba pode ser de uma cápsula (outra sessão)
+      wc.loadURL(target);
+    }
+  }, 4000);
 }
 
 // Nega pedidos de permissão que casam com `pred` (ex.: de uma aba que fechou).
