@@ -45,7 +45,9 @@ const sections = {
             q ? 'Nenhum favorito encontrado.' : 'Nenhum favorito ainda. Use a estrela na barra de endereço (Ctrl+D).')));
     };
     return [h('h1', {}, 'Favoritos'), h('p', { class: 'sub' }, 'As páginas que você guardou.'),
-      h('div', { class: 'tools' }, searchBox('Buscar nos favoritos')), box];
+      h('div', { class: 'tools' }, searchBox('Buscar nos favoritos'),
+        h('button', { class: 'btn danger', onclick: () => d.bookmarks.length && confirm(`Excluir todos os ${d.bookmarks.length} favoritos? Não dá para desfazer.`) && act('clearBookmarks') }, 'Excluir todos')),
+      box];
   },
 
   historico() {

@@ -731,6 +731,7 @@ const panelActions = {
   removeBookmark: url => { data.bookmarks = data.bookmarks.filter(b => b.url !== url); save(); layout(); sync(); },
   removeHistory: t => { data.history = data.history.filter(h => h.t !== t); save(); },
   clearHistory: () => { data.history = []; save(); },
+  clearBookmarks: () => { data.bookmarks = []; save(); layout(); sync(); },
   setPref: ({ key, value }) => {
     if (key === 'search' && ENGINES[value]) data.prefs.search = value;
     if (key === 'theme' && ['system', 'dark', 'light'].includes(value)) nativeTheme.themeSource = data.prefs.theme = value;
