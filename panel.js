@@ -112,6 +112,7 @@ const sections = {
           seg('bookmarksBar', { show: 'Mostrar', hide: 'Ocultar' })),
         h('div', { class: 'setting' }, h('div', {}, 'Tema'), seg('theme', { system: 'Sistema', dark: 'Escuro', light: 'Claro' })),
         h('div', { class: 'setting' }, h('div', {}, 'Cor de destaque', h('p', {}, 'Abas, botões, estrela e foco.')), swatches())),
+      h('h2', {}, 'Importar favoritos'), importBox(),
       h('h2', {}, 'Permissões dos sites'), perms,
       h('h2', {}, 'Privacidade'),
       h('div', { class: 'list' }, h('div', { class: 'setting' },
@@ -146,6 +147,31 @@ function swatches() {
     })),
     h('label', { class: 'sw custom', title: 'Outra cor', 'aria-checked': custom, style: custom ? `--c:${current}` : '' },
       h('input', { type: 'color', 'aria-label': 'Escolher outra cor', value: custom ? current : '#c9ced6', onchange: e => pick(e.target.value) })));
+}
+
+// Um botão por perfil do Chrome/Edge/Brave encontrado neste computador.
+function importBox() {
+  if (!d.importSources.length) {
+    return h('div', { class: 'list' }, h('div', { class: 'empty' }, 'Nenhum Chrome, Edge ou Brave com favoritos neste computador.'));
+  }
+  return h('div', { class: 'list' }, d.importSources.map(s => {
+    const status = h('span', { class: 'ok' });
+    const btn = h('button', { class: 'act go', onclick: async () => {
+      btn.disabled = true;
+      const before = d.bookmarks.length;
+      try {
+        d = await call('importBookmarks', s.id);
+        const added = d.bookmarks.length - before;
+        status.textContent = added ? `${added} importado${added > 1 ? 's' : ''} ✓` : 'Já estavam todos aqui ✓';
+      } catch {
+        status.textContent = 'Não foi possível importar';
+        btn.disabled = false;
+      }
+    } }, 'Importar');
+    return h('div', { class: 'row' },
+      h('div', { class: 'main' }, h('div', { class: 't' }, s.browser), h('div', { class: 'u' }, `${/^perfil/i.test(s.profile) ? '' : 'Perfil '}${s.profile} · ${s.count} favorito${s.count > 1 ? 's' : ''}`)),
+      status, btn);
+  }));
 }
 
 function render() {

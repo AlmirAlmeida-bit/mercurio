@@ -1,0 +1,95 @@
+# Memória do projeto Mercurio
+
+> Atualizado em 20/11/2026. Resumo do que existe, por que foi feito assim e o que falta.
+
+## O que é
+
+**Mercurio** é um navegador para Windows, Mac e Linux, feito pela **TresTech** (trestech.com.br) para ser vendido.
+Usa **Electron 45** (motor Chromium 156), é compatível com extensões da Chrome Web Store e tem visual minimalista inspirado no deus Mercúrio.
+
+- Repositório: https://github.com/AlmirAlmeida-bit/mercurio (público hoje, **vai ficar privado**)
+- Versão atual: **0.1.0** (tag `v0.1.0`, publicada em 20/11/2026)
+- Nome da empresa confirmado: **TresTech** (o site se apresenta como "3tech", mas o nome oficial é TresTech)
+
+## Funcionalidades
+
+| Área | O que faz |
+|---|---|
+| Abas | Abrir, fechar, trocar (`Ctrl+T`, `Ctrl+W`, `Ctrl+Tab`), botão do meio fecha |
+| Navegação | Voltar, avançar, recarregar, **Home → trestech.com.br** |
+| Barra de endereço | Entende site ou busca; aceita só `http`/`https`; mostra cadeado ou "Não seguro" |
+| Favoritos | Estrela (`Ctrl+D`), **barra de favoritos em guias** (`Ctrl+Shift+B`), menu do botão direito, botão » para os que não cabem |
+| Painel (`mercurio://painel`) | Abre numa aba própria: Favoritos, Histórico (`Ctrl+H`), Extensões, Preferências (`Ctrl+,`) |
+| Extensões | Instala direto da Chrome Web Store, com confirmação das permissões; atualiza sozinho; lista e remove no painel |
+| Permissões | Faixa "site quer usar câmera / localização…" com Permitir/Bloquear; lembra por site; dá para revogar no painel |
+| Importar favoritos | Preferências → "Importar favoritos": lê direto o arquivo `Bookmarks` dos perfis do Chrome, Edge e Brave (Windows, Mac, Linux); pastas são achatadas; repetidos são ignorados |
+| Preferências | Buscador (DuckDuckGo, Google, Bing, Brave), tema (sistema/escuro/claro), **cor de destaque**, limpar cookies/cache |
+| Aviso de direitos | Janela "© TresTech" com link para o site, na 1ª abertura **após cada instalação** |
+| Licenças | `THIRD-PARTY-NOTICES.txt` abre por Painel → Preferências → Sobre → "Licenças de terceiros" |
+
+## Arquivos
+
+| Arquivo | Papel |
+|---|---|
+| `main.js` | Processo principal: janela, abas, permissões, extensões, painel, histórico, favoritos. **Topo do arquivo cita todas as bibliotecas e licenças** |
+| `ui.html` / `ui.js` | Barra do navegador (abas, endereço, favoritos, faixa de permissão) |
+| `preload.js` | Ponte segura entre a barra e o `main.js` |
+| `panel.html` / `panel.js` / `panel-preload.js` | Painel de configurações |
+| `home.html` / `home.js` | Página da nova aba (logo grande + busca) |
+| `accent.js` | Aplica a cor de destaque (usado pela barra, painel e nova aba) |
+| `url.js` | Converte o que foi digitado em endereço ou busca. Tem autoteste: `npm test` |
+| `logo.png` | Arte original do logo (caduceu, fundo preto) |
+| `assets/logo.png`, `assets/icon.png` | Gerados a partir do `logo.png` por `npm run icon` |
+| `scripts/icon.js` | Gera o logo transparente e o ícone do app |
+| `scripts/notices.js` | Gera o `THIRD-PARTY-NOTICES.txt` |
+| `.github/workflows/build.yml` | GitHub Actions: gera instaladores de Windows, Mac e Linux |
+
+Dados do usuário ficam em `%APPDATA%\Mercurio` (Windows): `data.json` (favoritos, histórico, preferências), `permissions.json`, `aviso-visto`.
+
+## Comandos
+
+```bash
+npm install          # instalar dependências
+npm start            # rodar em desenvolvimento
+npm test             # autoteste da barra de endereço
+npm run icon         # regerar logo/ícone a partir de logo.png
+npm run notices      # regerar THIRD-PARTY-NOTICES.txt (após mudar dependências)
+npm run dist:win     # instalador Windows  -> dist/windows/
+npm run dist:linux   # Linux .tar.gz       -> dist/linux/
+npm run dist:mac     # Mac .dmg/.zip       -> dist/mac/   (só num Mac)
+```
+
+**Versão nova com os três sistemas:** mudar `version` no `package.json`, depois `git tag v0.2.0 && git push origin v0.2.0`. O GitHub Actions gera tudo e publica em Releases.
+
+## Decisões tomadas (e por quê)
+
+- **Electron em vez de criar um motor ou bifurcar o Chromium:** o único caminho viável para uma equipe pequena; o Chromium dá compatibilidade com sites e extensões.
+- **`electron-chrome-extensions` + `electron-chrome-web-store` (MIT):** o Electron sozinho só entende parte das extensões; estas bibliotecas trazem ícones, popups, abas e a loja.
+- **Extensões fora da barra (pedido do Almir):** ficam só no painel. Consequência: extensões que dependem de clicar no ícone (ex.: gerenciador de senhas) não abrem o popup. Ideia pendente: opção "Fixar na barra".
+- **Segurança das páginas:** cada aba roda isolada (`sandbox`, `contextIsolation`, sem Node); só a barra e o painel locais falam com o `main.js`, e o `main.js` confere a origem; `<webview>` bloqueado; endereços `javascript:` e `file:` digitados viram busca.
+- **Permissões negadas por padrão:** só tela cheia e copiar são liberados direto; câmera, microfone, localização, notificações etc. perguntam.
+- **Aviso de direitos por instalação:** usa a data do executável como identificador, porque `%APPDATA%` sobrevive à reinstalação.
+- **Instalador Windows de um clique (NSIS), sem assinatura digital:** o Windows mostra "O Windows protegeu o computador" → *Mais informações → Executar assim mesmo*.
+- **Mac sem certificado Apple:** o macOS bloqueia na 1ª vez → botão direito → *Abrir*, ou `xattr -cr /Applications/Mercurio.app`.
+
+## Licenças
+
+- Electron e bibliotecas: **MIT**. Chromium: **BSD-3-Clause**. `pbf`: BSD-3-Clause.
+- **Uso comercial é permitido**, inclusive com código fechado, desde que os avisos de copyright e os textos das licenças acompanhem o app (feito: `THIRD-PARTY-NOTICES.txt`, `LICENSE.electron.txt`, `LICENSES.chromium.html`).
+- Não usar as marcas "Chrome"/"Google" como marca do produto.
+- Recomendado antes de vender: consultar advogado de propriedade intelectual e checar o nome "Mercurio" no INPI.
+
+## Cuidados técnicos
+
+- **No terminal do VS Code / Claude Code**, a variável `ELECTRON_RUN_AS_NODE` vem ligada e faz o Electron abrir como Node (o app não abre). Rodar `Remove-Item Env:ELECTRON_RUN_AS_NODE` (PowerShell) antes de `npm start`/`npm run dist:*`.
+- O nome do arquivo é `logo.png` em minúsculas (Mac e Linux diferenciam maiúsculas).
+- No Windows, o `AppImage` e o `.deb` do Linux não saem (precisam do GitHub Actions ou de um Linux).
+- Downloads grandes de Artifacts pelo `gh` caíram várias vezes; pelo navegador é mais estável.
+
+## Pendências
+
+- [ ] **Testar a segurança** do navegador (agenda de 21/11/2026)
+- [ ] **Planejar o site de distribuição** (agenda de 21/11/2026). Com o repositório privado, os Releases do GitHub deixam de ser públicos
+- [ ] Tornar o repositório privado (Almir vai fazer)
+- [x] Release v0.1.0 publicada com os 8 instaladores: https://github.com/AlmirAlmeida-bit/mercurio/releases/tag/v0.1.0
+- [ ] Ideias em aberto: "Fixar extensão na barra"; compartilhamento de tela (Meet); definir o Mercurio como navegador padrão; certificados de assinatura (Windows e Apple); halo do logo no tema claro

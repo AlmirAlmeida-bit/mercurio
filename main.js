@@ -295,6 +295,72 @@ function extIcon(ext) {
   return img.isEmpty() ? null : img.resize({ width: 48, quality: 'best' }).toDataURL();
 }
 
+// ---- importar favoritos do Chrome (e Edge/Brave, que usam o mesmo formato) ----
+
+function chromiumDirs() {
+  const home = app.getPath('home');
+  const local = process.env.LOCALAPPDATA ?? '';
+  const mac = path.join(home, 'Library', 'Application Support');
+  const cfg = path.join(home, '.config');
+  return {
+    win32: [['Google Chrome', path.join(local, 'Google', 'Chrome', 'User Data')],
+      ['Microsoft Edge', path.join(local, 'Microsoft', 'Edge', 'User Data')],
+      ['Brave', path.join(local, 'BraveSoftware', 'Brave-Browser', 'User Data')]],
+    darwin: [['Google Chrome', path.join(mac, 'Google', 'Chrome')],
+      ['Microsoft Edge', path.join(mac, 'Microsoft Edge')],
+      ['Brave', path.join(mac, 'BraveSoftware', 'Brave-Browser')]],
+    linux: [['Google Chrome', path.join(cfg, 'google-chrome')], ['Chromium', path.join(cfg, 'chromium')],
+      ['Microsoft Edge', path.join(cfg, 'microsoft-edge')], ['Brave', path.join(cfg, 'BraveSoftware', 'Brave-Browser')]],
+  }[process.platform] ?? [];
+}
+
+// Lê o arquivo "Bookmarks" de um perfil. Pastas são achatadas (o Mercurio não tem pastas).
+function readChromiumBookmarks(file) {
+  let roots;
+  try { roots = JSON.parse(fs.readFileSync(file, 'utf8')).roots; } catch { return []; }
+  const out = [];
+  const walk = n => {
+    if (!n) return;
+    if (n.type === 'url' && isWeb(n.url)) out.push({ url: n.url, title: String(n.name || n.url).slice(0, 300) });
+    (n.children ?? []).forEach(walk);
+  };
+  ['bookmark_bar', 'other', 'synced'].forEach(k => walk(roots?.[k]));
+  return out;
+}
+
+// Perfis encontrados neste computador. O painel só recebe o id; o caminho fica aqui.
+function importSources() {
+  const out = [];
+  for (const [browser, dir] of chromiumDirs()) {
+    let profiles;
+    try { profiles = fs.readdirSync(dir).filter(p => p === 'Default' || /^Profile \d+$/.test(p)); } catch { continue; }
+    let names = {};
+    try { names = JSON.parse(fs.readFileSync(path.join(dir, 'Local State'), 'utf8')).profile.info_cache ?? {}; } catch {}
+    for (const p of profiles) {
+      const file = path.join(dir, p, 'Bookmarks');
+      const count = readChromiumBookmarks(file).length;
+      if (count) out.push({ id: `${browser}|${p}`, browser, profile: names[p]?.name || p, count, file });
+    }
+  }
+  return out;
+}
+
+function importBookmarks(id) {
+  const src = importSources().find(s => s.id === id);
+  if (!src) throw new Error('Perfil não encontrado');
+  const have = new Set(data.bookmarks.map(b => b.url));
+  const t = Date.now();
+  // unshift em ordem: na barra (ordem inversa) eles entram depois dos atuais, na ordem do Chrome
+  for (const b of readChromiumBookmarks(src.file)) {
+    if (have.has(b.url)) continue;
+    have.add(b.url);
+    data.bookmarks.unshift({ ...b, t });
+  }
+  save();
+  layout();
+  sync();
+}
+
 function panelData() {
   return {
     version: app.getVersion(),
@@ -302,6 +368,7 @@ function panelData() {
     prefs: data.prefs,
     bookmarks: data.bookmarks,
     history: data.history,
+    importSources: importSources().map(({ file, ...s }) => s), // sem caminhos para o painel
     permissions: Object.entries(decisions).flatMap(([origin, perms]) =>
       Object.entries(perms).map(([perm, allow]) => ({ origin, perm, allow }))),
     extensions: (ses.extensions ?? ses).getAllExtensions().map(x => ({
@@ -337,6 +404,7 @@ const panelActions = {
   clearData: async () => { await ses.clearStorageData(); await ses.clearCache(); },
   store: () => newTab(STORE),
   notices: () => newTab(NOTICES),
+  importBookmarks: id => importBookmarks(String(id)),
 };
 
 ipcMain.handle('panel', async (e, name, arg) => {
