@@ -178,10 +178,15 @@ const sections = {
         } }, 'Limpar')))),
       h('h2', {}, 'Sobre'),
       h('div', { class: 'list' }, h('div', { class: 'about' }, h('img', { src: 'assets/logo.png', alt: '' }),
-        h('div', {}, h('div', {}, `Mercurio ${d.version}`),
+        h('div', { style: 'flex:1' }, h('div', {}, `Mercurio ${d.version}`, h('span', { class: 'chip' }, UPDATE[d.update.status]?.(d.update) ?? '')),
           h('p', { class: 'u', style: 'margin:4px 0 0;color:var(--dim)' }, `© ${new Date().getFullYear()} TresTech. Todos os direitos reservados. `,
             h('a', { href: 'https://trestech.com.br', target: '_blank' }, 'trestech.com.br'), ' · ',
-            h('a', { href: '#', onclick: e => { e.preventDefault(); call('notices'); } }, 'Licenças de terceiros'))))),
+            h('a', { href: '#', onclick: e => { e.preventDefault(); call('notices'); } }, 'Licenças de terceiros'))),
+        d.update.status === 'downloaded'
+          ? h('button', { class: 'btn primary', onclick: () => call('installUpdate') }, 'Reiniciar e atualizar')
+          : d.update.status !== 'dev'
+            ? h('button', { class: 'btn', onclick: async () => { d = await call('checkUpdates'); setTimeout(refresh, 2500); } }, 'Verificar atualizações')
+            : null)),
     ];
   },
 };
@@ -203,6 +208,17 @@ function swatches() {
     h('label', { class: 'sw custom', title: 'Outra cor', 'aria-checked': custom, style: custom ? `--c:${current}` : '' },
       h('input', { type: 'color', 'aria-label': 'Escolher outra cor', value: custom ? current : '#c9ced6', onchange: e => pick(e.target.value) })));
 }
+
+// Texto do status da atualização automática (main.js: setupUpdates).
+const UPDATE = {
+  dev: () => 'modo desenvolvimento',
+  idle: () => 'atualizado',
+  checking: () => 'verificando…',
+  none: () => 'atualizado',
+  downloading: u => `baixando ${u.version}…`,
+  downloaded: u => `${u.version} pronta — reinicie para atualizar`,
+  error: () => 'não foi possível verificar',
+};
 
 // Um botão por perfil do Chrome/Edge/Brave encontrado neste computador.
 function importBox() {

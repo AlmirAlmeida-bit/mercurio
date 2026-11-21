@@ -8,7 +8,7 @@
 Usa **Electron 45** (motor Chromium 156), é compatível com extensões da Chrome Web Store e tem visual minimalista inspirado no deus Mercúrio.
 
 - Repositório: https://github.com/AlmirAlmeida-bit/mercurio (público hoje, **vai ficar privado**)
-- Versão atual: **0.1.0** (tag `v0.1.0`, publicada em 20/11/2026)
+- Versão atual: **0.2.0** (em teste local; a última publicada no GitHub é a `v0.1.0`, de 20/11/2026)
 - Nome da empresa confirmado: **TresTech** (o site se apresenta como "3tech", mas o nome oficial é TresTech)
 
 ## Funcionalidades
@@ -70,6 +70,15 @@ npm run dist:win     # instalador Windows  -> dist/windows/
 npm run dist:linux   # Linux .tar.gz       -> dist/linux/
 npm run dist:mac     # Mac .dmg/.zip       -> dist/mac/   (só num Mac)
 ```
+
+## Atualização automática (electron-updater)
+
+- **Testar builds novas:** não precisa desinstalar. Feche o Mercurio e rode o instalador novo: ele atualiza por cima e mantém favoritos, histórico, cápsulas e preferências. Suba a `version` no `package.json` a cada build de teste (0.2.0 → 0.2.1…).
+- **Como funciona:** cada build gera, junto do instalador, o **`latest.yml`** (versão + SHA-512) e o `.blockmap`. O app instalado confere `https://trestech.com.br/mercurio/atualizacoes/latest.yml` ao abrir e a cada 6 h, baixa em segundo plano, valida o SHA-512 e mostra o botão **Atualizar** na barra (ou instala ao fechar). Status em Painel → Preferências → Sobre.
+- **Publicar uma atualização (quando o site existir):** copie para a pasta `mercurio/atualizacoes/` do site os arquivos de `dist/windows/`: `latest.yml`, `Mercurio Setup X.exe` e `.blockmap`. Mantenha o `.blockmap` da versão anterior também: assim os usuários baixam só a diferença.
+- **Trocar o endereço:** `build.publish[0].url` no `package.json` (vai gravado no app; versões já instaladas continuam usando o endereço antigo).
+- **Testar sem site:** rode o app empacotado com a variável `MERCURIO_UPDATE_URL=http://127.0.0.1:<porta>` apontando para uma pasta com `latest.yml` + instalador.
+- **Limites:** Mac só se atualiza sozinho com certificado Apple (app assinado); no Linux funciona com o AppImage (não com `.deb`/`.tar.gz`). Sem assinatura digital no Windows, a proteção é o HTTPS do site + SHA-512.
 
 **Versão nova com os três sistemas:** mudar `version` no `package.json`, depois `git tag v0.2.0 && git push origin v0.2.0`. O GitHub Actions gera tudo e publica em Releases.
 

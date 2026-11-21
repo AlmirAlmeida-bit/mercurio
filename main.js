@@ -28,6 +28,20 @@
  *   @types/filesystem 0.0.36 ............ MIT           © Microsoft Corporation (DefinitelyTyped)
  *   @types/filewriter 0.0.33 ............ MIT           © Microsoft Corporation (DefinitelyTyped)
  *   @types/har-format 1.2.16 ............ MIT           © Microsoft Corporation (DefinitelyTyped)
+ *   electron-updater 6.8.11 ............. MIT           © Loopline Systems
+ *   builder-util-runtime 9.7.0 .......... MIT           © Loopline Systems
+ *   lazy-val 1.0.5 ...................... MIT           © Vladimir Krivosheev
+ *   fs-extra 10.1.0 ..................... MIT           © JP Richardson
+ *   jsonfile 6.2.1 ...................... MIT           © JP Richardson
+ *   universalify 2.0.1 .................. MIT           © Ryan Zimmerman
+ *   graceful-fs 4.2.12 .................. BlueOak-1.0.0 © Isaac Z. Schlueter e contribuidores
+ *   sax 1.6.1 ........................... BlueOak-1.0.0 © Isaac Z. Schlueter e contribuidores
+ *   semver 7.7.4 ........................ ISC           © Isaac Z. Schlueter e contribuidores
+ *   js-yaml 4.3.2 ....................... MIT           © Vitaly Puzrin
+ *   argparse 2.0.1 ...................... Python-2.0    © Python Software Foundation (porte de Vitaly Puzrin)
+ *   lodash.escaperegexp 4.1.2 ........... MIT           © jQuery Foundation e contribuidores
+ *   lodash.isequal 4.5.0 ................ MIT           © JS Foundation e contribuidores
+ *   tiny-typed-emitter 2.1.0 ............ MIT           © Zurab Benashvili
  *
  * Ferramentas de empacotamento (geram os instaladores; não rodam dentro do navegador)
  *   electron-builder 26.18.0 ............ MIT           © Loopline Systems
@@ -53,6 +67,7 @@ const { createAudit } = require('./lib/audit');
 const snapshots = require('./lib/snapshots');
 const capsules = require('./lib/capsules');
 const { hasInternet, NETWORK_ERRORS } = require('./lib/connectivity');
+const { autoUpdater } = require('electron-updater');
 
 const BAR = 80;    // abas (40) + endereço (40)
 const PROMPT = 44; // faixa de permissão, quando visível
@@ -89,6 +104,7 @@ let data = { bookmarks: [], history: [], prefs: { search: 'duckduckgo', theme: '
 let caps = [];      // cápsulas persistidas (lib/capsules.js)
 let snaps = [];     // snapshots (lib/snapshots.js)
 let pending = [];   // pedidos de permissão aguardando resposta
+let update = { status: app.isPackaged ? 'idle' : 'dev' }; // atualização automática (setupUpdates)
 
 // Contextos (lib/contexts.js). `tabs`/`active` apontam sempre para o contexto visível.
 const contexts = new Map();
@@ -150,7 +166,35 @@ function sync() {
     canBack: wc?.navigationHistory.canGoBack() ?? false,
     canForward: wc?.navigationHistory.canGoForward() ?? false,
     prompt: pending[0] ? { origin: pending[0].origin, label: pending[0].label } : null,
+    update: update.status === 'downloaded' ? update.version : null,
   });
+}
+
+// ---- atualização automática ----
+// O instalador publica latest.yml + .exe em build.publish (package.json). O app confere ao abrir e a cada 6 h,
+// baixa em segundo plano (com verificação SHA-512) e instala ao clicar "Atualizar" ou ao fechar o navegador.
+// MERCURIO_UPDATE_URL troca o endereço (para testar com um servidor local).
+const UPDATE_EVERY = 6 * 60 * 60 * 1000;
+
+function setupUpdates() {
+  if (!app.isPackaged) return; // rodando com "npm start": não há instalação para atualizar
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.disableWebInstaller = true; // só aceita o instalador completo publicado no latest.yml
+  if (process.env.MERCURIO_UPDATE_URL) autoUpdater.setFeedURL({ provider: 'generic', url: process.env.MERCURIO_UPDATE_URL });
+  const set = (status, extra) => { update = { ...update, status, ...extra }; sync(); };
+  autoUpdater.on('checking-for-update', () => set('checking'));
+  autoUpdater.on('update-not-available', () => set('none'));
+  autoUpdater.on('update-available', i => set('downloading', { version: i.version }));
+  autoUpdater.on('update-downloaded', i => set('downloaded', { version: i.version }));
+  autoUpdater.on('error', err => { console.error('Atualização:', err.message); set('error'); });
+  checkUpdates();
+  setInterval(checkUpdates, UPDATE_EVERY);
+}
+
+function checkUpdates() {
+  if (!app.isPackaged) return;
+  autoUpdater.checkForUpdates().catch(() => {}); // sem internet/site fora do ar: tenta de novo depois
 }
 
 function layout() {
@@ -555,6 +599,7 @@ const commands = {
   select: i => tabs[i] && select(i),
   close: i => tabs[i] && closeTab(i),
   permission: allow => answerPermission(allow === true),
+  installUpdate: () => update.status === 'downloaded' && autoUpdater.quitAndInstall(),
 };
 
 // ---- painel (favoritos, histórico, extensões, cápsulas, snapshots, preferências) ----
@@ -650,6 +695,7 @@ function importBookmarks(id) {
 function panelData() {
   return {
     version: app.getVersion(),
+    update,
     engines: Object.fromEntries(Object.entries(ENGINES).map(([k, v]) => [k, v.name])),
     prefs: data.prefs,
     bookmarks: data.bookmarks,
@@ -717,6 +763,8 @@ const panelActions = {
   snapshotNow: () => { takeSnapshot('manual'); },
   restoreSnapshot: id => restoreSnapshot(String(id)),
   deleteSnapshot: id => { snaps = snaps.filter(s => s.id !== id); snapStore.save(); },
+  checkUpdates: () => checkUpdates(),
+  installUpdate: () => commands.installUpdate(),
 };
 
 // Única porta das páginas internas para o processo principal; a origem do remetente decide o que pode.
@@ -880,6 +928,7 @@ app.whenReady().then(async () => {
   newTab();
   win.show();
   setInterval(() => takeSnapshot('auto'), SNAPSHOT_EVERY);
+  setupUpdates();
   firstRunNotice();
 });
 
