@@ -68,7 +68,8 @@ const sections = {
           h('a', { class: 'main', href: x.url, target: '_blank' }, h('div', { class: 't' }, x.title || host(x.url)), h('div', { class: 'u' }, host(x.url))),
           xButton('Remover do histórico', () => act('removeHistory', x.t)))))]).flat()
         : [h('div', { class: 'list' }, h('div', { class: 'empty' }, q ? 'Nada encontrado no histórico.' : 'Seu histórico está vazio.'))]),
-        items.length > limit ? h('button', { class: 'btn', style: 'margin:16px auto;display:block', onclick: () => { limit += 300; list(); } }, 'Mostrar mais') : null);
+        // replaceChildren escreveria um null como texto "null": sem botão, passa nada
+        ...(items.length > limit ? [h('button', { class: 'btn', style: 'margin:16px auto;display:block', onclick: () => { limit += 300; list(); } }, 'Mostrar mais')] : []));
     };
     return [h('h1', {}, 'Histórico'), h('p', { class: 'sub' }, 'Os sites que você visitou.'),
       h('div', { class: 'tools' }, searchBox('Buscar no histórico'),
