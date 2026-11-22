@@ -76,6 +76,8 @@ const BMBAR = 32;  // barra de favoritos, quando visível
 
 // Sites como o WhatsApp Web recusam navegadores que não reconhecem ("O WhatsApp funciona no Google Chrome…").
 // O Mercurio se apresenta como o Chrome em que é baseado: tira "Mercurio/x" e "Electron/x" da identificação.
+// Testado em 22/11/2026: nem "Mercurio/x" no FINAL (como o "Edg/" do Edge) passa; o WhatsApp só aceita navegadores
+// que conhece. Para contar usuários, usar os acessos ao latest.yml da atualização automática (memoria.md).
 app.userAgentFallback = app.userAgentFallback.replace(/ (Mercurio|mercurio|Electron)\/\S+/g, '');
 
 // Páginas internas em mercurio://app/ (e não file://): sites não conseguem abri-las, extensões com acesso a
