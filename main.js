@@ -1176,7 +1176,7 @@ app.whenReady().then(async () => {
 async function askDonation() {
   if (!win || win.isDestroyed() || !donate.shouldAsk(data.donate, Date.now())) return;
   data.donate.lastAsk = Date.now(); save();
-  const { response, checkboxChecked } = await dialog.showMessageBox(win, {
+  const { response } = await dialog.showMessageBox(win, {
     type: 'none',
     icon: ICON,
     title: 'Apoie o Mercurio',
@@ -1186,10 +1186,8 @@ async function askDonation() {
     buttons: ['Agora não', 'Apoiar o Mercurio'],
     defaultId: 1,
     cancelId: 0,
-    checkboxLabel: 'Já apoiei, não perguntar mais',
     noLink: true,
   });
-  if (checkboxChecked) { data.donate.never = true; save(); }
   if (response === 1) openApoiar();
 }
 
