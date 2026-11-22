@@ -1,7 +1,7 @@
 {
   "name": "mercurio",
   "productName": "Mercurio",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Navegador rápido, seguro e compatível com extensões Chrome",
   "author": {
     "name": "TresTech",
@@ -15,6 +15,7 @@
     "test": "node url.js && node lib/snapshots.test.js && node lib/connectivity.js && node lib/hosts.js && node lib/donate.js",
     "icon": "electron scripts/icon.js",
     "notices": "node scripts/notices.js",
+    "pix": "node scripts/pix.js",
     "dist": "npm run dist:win && npm run dist:linux && npm run dist:mac",
     "dist:win": "electron-builder --win -c.directories.output=dist/windows",
     "dist:linux": "electron-builder --linux tar.gz -c.directories.output=dist/linux",
@@ -42,6 +43,9 @@
       "offline.js",
       "aviso.html",
       "aviso.js",
+      "apoiar.html",
+      "apoiar.js",
+      "pix-dados.js",
       "lib/**",
       "!lib/*.test.js",
       "THIRD-PARTY-NOTICES.txt",
@@ -98,7 +102,8 @@
   },
   "devDependencies": {
     "electron": "^45.4.1",
-    "electron-builder": "^26.18.0"
+    "electron-builder": "^26.18.0",
+    "qrcode": "^1.5.4"
   },
   "dependencies": {
     "electron-chrome-extensions": "^4.10.0",

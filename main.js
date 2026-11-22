@@ -46,6 +46,7 @@
  * Ferramentas de empacotamento (geram os instaladores; não rodam dentro do navegador)
  *   electron-builder 26.18.0 ............ MIT           © Loopline Systems
  *   NSIS (instalador do Windows) ........ zlib/libpng   © Nullsoft e contribuidores do NSIS
+ *   qrcode 1.5.4 (gera o QR do Pix) ..... MIT           © Ryan Day (só no build: scripts/pix.js; o app leva a imagem)
  *
  * Conteúdo de terceiros acessado pelo navegador (não incluído no app)
  *   Chrome Web Store — serviço do Google, sujeito aos termos do Google.
@@ -85,7 +86,8 @@ app.userAgentFallback = app.userAgentFallback.replace(/ (Mercurio|mercurio|Elect
 // arquivos não as alcançam e só os arquivos desta lista são servidos.
 protocol.registerSchemesAsPrivileged([{ scheme: 'mercurio', privileges: { standard: true, secure: true } }]);
 const SERVED = new Set(['ui.html', 'ui.js', 'home.html', 'home.js', 'accent.js', 'panel.html', 'panel.js', 'audit.html', 'audit.js',
-  'offline.html', 'offline.js', 'aviso.html', 'aviso.js', 'assets/logo.png', 'THIRD-PARTY-NOTICES.txt']);
+  'offline.html', 'offline.js', 'aviso.html', 'aviso.js', 'apoiar.html', 'apoiar.js', 'pix-dados.js', 'assets/logo.png', 'assets/pix.png',
+  'THIRD-PARTY-NOTICES.txt']);
 function serve(req) {
   const { host, pathname } = new URL(req.url);
   const file = decodeURIComponent(pathname.slice(1));
@@ -98,6 +100,8 @@ const PANEL = page('panel.html');
 const AUDIT = page('audit.html');
 const OFFLINE = page('offline.html');
 const AVISO = page('aviso.html'); // site falso bloqueado (lib/hosts.js)
+const APOIAR = page('apoiar.html'); // doação por Pix (QR gerado por scripts/pix.js)
+const openApoiar = () => { switchContext(main); newTab(`${APOIAR}?a=${encodeURIComponent(data.prefs.accent)}`); };
 const NO_INTERNET = -106; // net::ERR_INTERNET_DISCONNECTED (o Chromium já sabe que está offline)
 const NOTICES = page('THIRD-PARTY-NOTICES.txt');
 const STORE = 'https://chromewebstore.google.com/';
@@ -157,6 +161,7 @@ function shownUrl(u) {
   if (u.startsWith(HOME)) return '';
   if (isPanel(u)) return 'mercurio://painel';
   if (isAudit(u)) return 'mercurio://auditoria';
+  if (u.startsWith(APOIAR)) return 'mercurio://apoiar';
   // offline e aviso de site falso: mostra o endereço que não abriu (o falso fica em xn--..., que revela o truque)
   if (u.startsWith(OFFLINE) || u.startsWith(AVISO)) return new URL(u).searchParams.get('u') ?? '';
   try {
@@ -726,6 +731,7 @@ const commands = {
     s = String(s).trim();
     if (/^mercurio:\/\/(painel|settings)/i.test(s)) return openPanel();
     if (/^mercurio:\/\/auditoria/i.test(s)) return openAudit();
+    if (/^mercurio:\/\/apoiar/i.test(s)) return openApoiar();
     const url = toUrl(s, data.prefs.search);
     isInternal(cur()?.getURL()) ? newTab(url) : cur()?.loadURL(url);
   },
@@ -929,7 +935,7 @@ const panelActions = {
   clearData: async () => { await ses.clearStorageData(); await ses.clearCache(); },
   store: () => newTab(STORE),
   notices: () => newTab(NOTICES),
-  donate: () => newTab(donate.URL),
+  donate: () => openApoiar(),
   importBookmarks: id => importBookmarks(String(id)),
   createCapsule: name => { createCapsule(name); },
   renameCapsule: ({ id, name }) => renameCapsule(String(id), name),
@@ -1184,7 +1190,7 @@ async function askDonation() {
     noLink: true,
   });
   if (checkboxChecked) { data.donate.never = true; save(); }
-  if (response === 1) { switchContext(main); newTab(donate.URL); }
+  if (response === 1) openApoiar();
 }
 
 // Ao sair: guarda as abas das cápsulas abertas (voltam pausadas), tira um snapshot e grava tudo.
