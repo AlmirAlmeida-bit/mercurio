@@ -74,6 +74,10 @@ const BAR = 80;    // abas (40) + endereço (40)
 const PROMPT = 44; // faixa de permissão, quando visível
 const BMBAR = 32;  // barra de favoritos, quando visível
 
+// Sites como o WhatsApp Web recusam navegadores que não reconhecem ("O WhatsApp funciona no Google Chrome…").
+// O Mercurio se apresenta como o Chrome em que é baseado: tira "Mercurio/x" e "Electron/x" da identificação.
+app.userAgentFallback = app.userAgentFallback.replace(/ (Mercurio|mercurio|Electron)\/\S+/g, '');
+
 // Páginas internas em mercurio://app/ (e não file://): sites não conseguem abri-las, extensões com acesso a
 // arquivos não as alcançam e só os arquivos desta lista são servidos.
 protocol.registerSchemesAsPrivileged([{ scheme: 'mercurio', privileges: { standard: true, secure: true } }]);
