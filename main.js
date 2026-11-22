@@ -214,6 +214,7 @@ function sync() {
     url: shownUrl(url),
     blocked: url.startsWith(AVISO),
     bookmarkable: isWeb(url),
+    popups: tabs[active]?.blocked?.length ?? 0,
     bookmarked: data.bookmarks.some(b => b.url === url),
     bookmarks: barVisible() ? barItems().map(({ url, title, favicon }) => ({ url, title, favicon })) : [],
     canBack: wc?.navigationHistory.canGoBack() ?? false,
@@ -277,6 +278,30 @@ function openDownloads() {
 }
 
 // Política de segurança + downloads para cada sessão (Principal, cápsula, efêmera).
+// Menu do ícone "pop-ups bloqueados" da barra de endereço.
+function popupsMenu(pos) {
+  const view = tabs[active];
+  const urls = view?.blocked ?? [];
+  if (!urls.length) return;
+  const site = ctxs.originOf(view.webContents.getURL());
+  const owner = view.ctx;
+  const clear = () => { view.blocked = undefined; sync(); };
+  const short = u => (u.length > 70 ? u.slice(0, 67) + '…' : u);
+  const items = [
+    { label: `${urls.length} pop-up${urls.length > 1 ? 's bloqueados' : ' bloqueado'} nesta página`, enabled: false },
+    ...urls.slice(-5).reverse().map(u => ({ label: `Abrir ${short(u)}`, click: () => { view.blocked = urls.filter(x => x !== u); newTab(u); } })),
+    { type: 'separator' },
+    {
+      label: `Sempre permitir pop-ups de ${site ? new URL(site).host : 'este site'}`,
+      enabled: !!site && !!owner.decisions,
+      click: () => { owner.decisions.set(site, 'popups', true); clear(); urls.forEach(u => newTab(u)); },
+    },
+    { label: 'Continuar bloqueando', click: clear },
+  ];
+  const x = Number(pos?.x), y = Number(pos?.y);
+  Menu.buildFromTemplate(items).popup({ window: win, x: Number.isFinite(x) ? Math.round(x) : 0, y: Number.isFinite(y) ? Math.round(y) : 80 });
+}
+
 function secure(s, decisions) {
   ctxs.harden(s, { decisions, onAsk, onBlocked, serve });
   trackDownloads(s);
@@ -355,12 +380,16 @@ function newTab(url) {
   });
   view.ctx = owner;
   const wc = view.webContents;
-  // Pop-ups viram abas do mesmo contexto, e só com clique ou tecla recente na aba visível (um por gesto), como o
-  // bloqueador do Chrome. Uma aba escondida, ou um script sozinho, não abre abas.
+  // Bloqueador de pop-ups: pop-ups viram abas do mesmo contexto, e só com clique ou tecla recente na aba visível
+  // (um por gesto), como no Chrome. O resto é bloqueado e aparece no ícone da barra de endereço, onde dá para abrir
+  // ou "sempre permitir" o site (decisão 'popups', revogável em Preferências → Permissões dos sites).
   wc.on('input-event', (_e, i) => { if (GESTURES.has(i.type)) view.gesture = Date.now(); });
   wc.setWindowOpenHandler(({ url }) => {
+    if (!isWeb(url)) return { action: 'deny' };
     const gesture = Date.now() - (view.gesture ?? 0) < 5000 && tabs[active] === view;
-    if (isWeb(url) && gesture) { view.gesture = 0; newTab(url); }
+    if (gesture) { view.gesture = 0; newTab(url); }
+    else if (owner.decisions?.get(ctxs.originOf(wc.getURL()), 'popups') === true) { switchContext(owner); newTab(url); }
+    else { view.blocked = [...(view.blocked ?? []), url].slice(-20); sync(); }
     return { action: 'deny' };
   });
   if (internal) {
@@ -381,7 +410,7 @@ function newTab(url) {
     if (b && url && b.favicon !== url) { b.favicon = url; save(); }
     sync();
   });
-  wc.on('did-start-navigation', (_e, _u, inPage, isMain) => { if (isMain && !inPage) view.favicon = view.icon = undefined; });
+  wc.on('did-start-navigation', (_e, _u, inPage, isMain) => { if (isMain && !inPage) view.favicon = view.icon = view.blocked = undefined; });
   // sem internet: mostra o joguinho no lugar do erro; a página volta sozinha quando a conexão retorna.
   // Erro de rede ambíguo (ex.: "endereço não encontrado") é confirmado com um teste real de conexão.
   wc.on('did-fail-load', async (_e, code, _desc, failed, isMain) => {
@@ -516,7 +545,8 @@ function openEphemeral() {
   let e = ephemeral();
   if (!e) {
     e = ctxs.createContext('ephemeral', 'Sessão efêmera');
-    secure(e.ses, ctxs.memoryDecisions()); // permissões também só na memória
+    e.decisions = ctxs.memoryDecisions(); // permissões também só na memória
+    secure(e.ses, e.decisions);
     e.audit = createAudit(e.ses);
     contexts.set(e.id, e);
   }
@@ -597,7 +627,8 @@ function resumeCapsule(id) {
     // ponytail: permissões da cápsula ficam na memória (separadas do Principal) e são perguntadas de novo
     // depois de reabrir o navegador; guardar por cápsula se isso incomodar
     if (!capDecisions.has(id)) capDecisions.set(id, ctxs.memoryDecisions());
-    secure(c.ses, capDecisions.get(id));
+    c.decisions = capDecisions.get(id);
+    secure(c.ses, c.decisions);
     contexts.set(id, c);
   }
   switchContext(c, cap);
@@ -720,6 +751,7 @@ const commands = {
       { label: 'Remover dos favoritos', click: () => panelActions.removeBookmark(b.url) },
     ]).popup({ window: win });
   },
+  popups: pos => popupsMenu(pos),
   bookmarksOverflow: from => {
     const items = barItems().slice(Number(from) || 0);
     if (items.length) Menu.buildFromTemplate(items.map(b => ({ label: b.title, click: () => commands.go(b.url) }))).popup({ window: win });
@@ -1086,6 +1118,7 @@ app.whenReady().then(async () => {
   contexts.set(main.id, main);
   ctx = main;
   tabs = main.tabs;
+  main.decisions = globalDecisions;
   secure(ses, globalDecisions);
 
   win = new BrowserWindow({

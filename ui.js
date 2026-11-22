@@ -23,6 +23,11 @@ function renderDownloads(d) {
   seenDone = d.doneAt;
 }
 $('star').onclick = () => cmd('bookmark');
+$('popups').onclick = e => {
+  e.preventDefault(); // o botão fica dentro do <label> da barra: sem isto o clique iria para o campo de endereço
+  const r = $('popups').getBoundingClientRect();
+  cmd('popups', { x: r.left, y: r.bottom + 4 });
+};
 $('plus').onclick = () => cmd('newTab');
 $('allow').onclick = () => cmd('permission', true);
 $('deny').onclick = () => cmd('permission', false);
@@ -124,6 +129,9 @@ onState(s => {
   $('star').title = !s.bookmarkable ? 'Abra um site para favoritar'
     : s.bookmarked ? 'Remover dos favoritos (Ctrl+D)' : 'Favoritar (Ctrl+D)';
 
+  $('popups').hidden = !s.popups;
+  $('popups').querySelector('span').textContent = s.popups > 1 ? s.popups : '';
+  $('popups').title = `${s.popups} pop-up${s.popups > 1 ? 's bloqueados' : ' bloqueado'}. Clique para abrir ou permitir.`;
   renderBookmarks(s.bookmarks);
   renderDownloads(s.downloads);
 

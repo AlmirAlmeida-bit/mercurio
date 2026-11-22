@@ -3,7 +3,7 @@ const view = document.getElementById('view');
 const X = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>'; // ícone estático
 const PERMS = {
   media: 'Câmera e microfone', geolocation: 'Localização', notifications: 'Notificações',
-  'clipboard-read': 'Área de transferência', midiSysex: 'Dispositivos MIDI',
+  'clipboard-read': 'Área de transferência', midiSysex: 'Dispositivos MIDI', popups: 'Pop-ups',
 };
 
 let d;          // dados vindos do navegador
