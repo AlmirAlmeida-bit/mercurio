@@ -191,6 +191,7 @@ const sections = {
           h('p', { class: 'u', style: 'margin:4px 0 0;color:var(--dim)' }, `© ${new Date().getFullYear()} TresTech. Todos os direitos reservados. `,
             h('a', { href: 'https://trestech.com.br', target: '_blank' }, 'trestech.com.br'), ' · ',
             h('a', { href: '#', onclick: e => { e.preventDefault(); call('notices'); } }, 'Licenças de terceiros'))),
+        h('button', { class: 'btn', title: 'O Mercurio é gratuito: ajude a mantê-lo', onclick: () => call('donate') }, 'Apoiar o Mercurio'),
         d.update.status === 'downloaded'
           ? h('button', { class: 'btn primary', onclick: () => call('installUpdate') }, 'Reiniciar e atualizar')
           : d.update.status !== 'dev'

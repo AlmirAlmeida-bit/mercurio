@@ -68,6 +68,7 @@ const snapshots = require('./lib/snapshots');
 const capsules = require('./lib/capsules');
 const { hasInternet, NETWORK_ERRORS } = require('./lib/connectivity');
 const { displayHost } = require('./lib/hosts');
+const donate = require('./lib/donate');
 const { autoUpdater } = require('electron-updater');
 
 const BAR = 80;    // abas (40) + endereço (40)
@@ -928,6 +929,7 @@ const panelActions = {
   clearData: async () => { await ses.clearStorageData(); await ses.clearCache(); },
   store: () => newTab(STORE),
   notices: () => newTab(NOTICES),
+  donate: () => newTab(donate.URL),
   importBookmarks: id => importBookmarks(String(id)),
   createCapsule: name => { createCapsule(name); },
   renameCapsule: ({ id, name }) => renameCapsule(String(id), name),
@@ -1160,7 +1162,30 @@ app.whenReady().then(async () => {
   setInterval(() => takeSnapshot('auto'), SNAPSHOT_EVERY);
   setupUpdates();
   firstRunNotice();
+  data.donate = donate.init(data.donate, Date.now()); save();
+  setTimeout(askDonation, Number(process.env.MERCURIO_DOAR_EM) || 2 * 60 * 1000); // 2 min depois de abrir
 });
+
+// Pedido de doação (regras em lib/donate.js).
+async function askDonation() {
+  if (!win || win.isDestroyed() || !donate.shouldAsk(data.donate, Date.now())) return;
+  data.donate.lastAsk = Date.now(); save();
+  const { response, checkboxChecked } = await dialog.showMessageBox(win, {
+    type: 'none',
+    icon: ICON,
+    title: 'Apoie o Mercurio',
+    message: 'O Mercurio é gratuito e feito no Brasil',
+    detail: 'Ele é desenvolvido pela TresTech. Se o Mercurio é útil para você, considere apoiar o projeto: '
+      + 'cada contribuição ajuda a manter o navegador rápido, seguro e atualizado.',
+    buttons: ['Agora não', 'Apoiar o Mercurio'],
+    defaultId: 1,
+    cancelId: 0,
+    checkboxLabel: 'Já apoiei, não perguntar mais',
+    noLink: true,
+  });
+  if (checkboxChecked) { data.donate.never = true; save(); }
+  if (response === 1) { switchContext(main); newTab(donate.URL); }
+}
 
 // Ao sair: guarda as abas das cápsulas abertas (voltam pausadas), tira um snapshot e grava tudo.
 app.on('before-quit', () => {
