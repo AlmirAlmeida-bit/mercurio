@@ -22,6 +22,8 @@ const out = {};
 // nenhuma etapa pode travar o teste: depois de 2 min mostra o que já tem
 setTimeout(() => { console.log(JSON.stringify({ ...out, TEMPO_ESGOTADO: true }, null, 2)); process.exit(1); }, 120000);
 const step = s => console.log('etapa:', s);
+// Janela atrás de outra: o Chromium descarta cliques/teclas simulados. Traz para frente (e aperta Esc, se pedido).
+const front = esc => appPid && execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(here, 'focus-esc.ps1'), appPid, ...(esc ? ['-Esc'] : [])]);
 
 step('9'); // item 9: extensão A tenta usar a identidade da extensão B (que tem nativeMessaging)
 await cmd('go', `${H}/blank`); await wait(1500);
@@ -77,6 +79,7 @@ step('12c'); // item 12c: pop-up legítimo (clique num link target=_blank) conti
 await cmd('go', `${H}/link`); await wait(1500);
 t = await find(x => x.url.startsWith(`${H}/link`));
 const l = await rpc(t);
+front();
 for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased']) await l('Input.dispatchMouseEvent', { type, x: 100, y: 100, button: 'left', clickCount: 1 });
 await wait(1500);
 out.item12c_popupComClique = (await targets()).filter(x => x.url.includes('blank?clique')).length;
@@ -87,11 +90,12 @@ t = await find(x => x.url.startsWith(`${H}/fs`));
 const f = await rpc(t);
 // o site tenta prender o usuário trocando exitFullscreen
 await ev(f, 'Document.prototype.exitFullscreen = document.exitFullscreen = () => Promise.resolve()');
+front();
 await ev(f, 'Promise.race([document.documentElement.requestFullscreen().then(() => "ok", e => e.message), new Promise(r => setTimeout(() => r("sem resposta"), 3000))])', true); await wait(1500);
 out.item7 = await ev(f, '({ telaCheia: !!document.fullscreenElement, barraVisivel: innerHeight < screen.height })');
 // Esc de verdade (o Esc simulado pelo DevTools não passa pelos atalhos do navegador): traz a janela para frente e aperta
 if (appPid) {
-  execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(here, 'focus-esc.ps1'), appPid]);
+  front(true);
   await wait(1500);
   out.item7_saiuComEsc = !(await ev(f, '!!document.fullscreenElement'));
 }

@@ -63,7 +63,16 @@ const pages = {
 
 if (cmd === 'serve') {
   https.createServer({ key: fs.readFileSync(path.join(here, 'key.pem')), cert: fs.readFileSync(path.join(here, 'cert.pem')) }, (req, res) => {
-    const p = pages[new URL(req.url, 'https://x').pathname];
+    const { pathname } = new URL(req.url, 'https://x');
+    // download lento (4 s), com ou sem tamanho informado, para ver a animação do botão
+    if (pathname === '/arquivo' || pathname === '/arquivo-sem-tamanho') {
+      const chunk = Buffer.alloc(64 * 1024, 65), n = 20;
+      res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-disposition': 'attachment; filename="relatorio.pdf"',
+        ...(pathname === '/arquivo' ? { 'content-length': chunk.length * n } : {}) });
+      let i = 0; const t = setInterval(() => { res.write(chunk); if (++i >= n) { clearInterval(t); res.end(); } }, 200);
+      return;
+    }
+    const p = pages[pathname];
     res.writeHead(p ? 200 : 404, { 'content-type': 'text/html; charset=utf-8' });
     res.end(p ?? 'nada');
   }).listen(8443, () => console.log('https :8443'));

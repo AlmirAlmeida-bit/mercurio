@@ -80,6 +80,22 @@
   #star[aria-pressed="true"] svg { fill: currentColor; }
   #star:disabled { color: var(--off); }
 
+  /* downloads: a seta desce de leve enquanto baixa, com uma linha fina de progresso; ao terminar, um brilho rápido */
+  #downloads { position: relative; }
+  #downloads .arrow { transform-box: fill-box; }
+  #downloads.busy { color: var(--fg); }
+  #downloads.busy .arrow { animation: drop 1.4s ease-in-out infinite; }
+  @keyframes drop { 0%, 100% { transform: translateY(-1.5px); opacity: 1; } 50% { transform: translateY(1.5px); opacity: .55; } }
+  #downloads .prog { position: absolute; left: 8px; right: 8px; bottom: 3px; height: 2px; border-radius: 2px; overflow: hidden;
+                     background: var(--line); opacity: 0; transition: opacity .3s; }
+  #downloads.busy .prog { opacity: 1; }
+  #downloads .prog i { display: block; width: var(--p, 0%); height: 100%; background: var(--accent, var(--fg)); box-shadow: var(--glow, none); transition: width .25s; }
+  #downloads.busy.indet .prog i { width: 40%; animation: slide 1.1s ease-in-out infinite; }
+  @keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+  #downloads.done { color: var(--accent, var(--fg)); animation: flash 1.8s ease-out; }
+  @keyframes flash { 0% { filter: drop-shadow(0 0 6px var(--accent, transparent)); } 100% { filter: none; } }
+  @media (prefers-reduced-motion: reduce) { #downloads, #downloads * { animation: none !important; } }
+
   /* barra de favoritos */
   #bookmarks { display: flex; align-items: center; gap: 2px; height: 32px; padding: 0 10px 4px; overflow: hidden; }
   #bookmarks[hidden] { display: none; }
@@ -133,6 +149,10 @@
         <svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/></svg>
       </button>
     </label>
+    <button id="downloads" title="Downloads: abrir a pasta" aria-label="Abrir a pasta de downloads">
+      <svg viewBox="0 0 24 24"><g class="arrow"><path d="M12 4v10"/><path d="M8 10.5l4 4 4-4"/></g><path d="M5 19.5h14"/></svg>
+      <span class="prog"><i></i></span>
+    </button>
     <button id="panel" title="Painel: favoritos, histórico, extensões e preferências" aria-label="Abrir painel">
       <svg viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>
     </button>

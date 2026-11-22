@@ -54,7 +54,7 @@
  * Para atualizar esta lista após mudar dependências:
  *   npm ls --omit=dev --all
  */
-const { app, BrowserWindow, WebContentsView, Menu, MenuItem, clipboard, dialog, ipcMain, nativeImage, nativeTheme, net, protocol, session } = require('electron');
+const { app, BrowserWindow, WebContentsView, Menu, MenuItem, clipboard, dialog, ipcMain, nativeImage, nativeTheme, net, protocol, session, shell } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
@@ -115,7 +115,7 @@ const ASK = {
 
 let win, ses, extensions, decisionsFile, dataStore, capStore, snapStore;
 let decisions = {}; // { origin: { permissão: true|false } } — contexto principal e cápsulas
-let data = { bookmarks: [], history: [], prefs: { search: 'duckduckgo', theme: 'system', accent: NEON_DEFAULT, bookmarksBar: 'show', snapshotsMax: snapshots.DEFAULT_MAX } };
+let data = { bookmarks: [], history: [], prefs: { search: 'duckduckgo', theme: 'system', accent: NEON_DEFAULT, bookmarksBar: 'show', snapshotsMax: snapshots.DEFAULT_MAX, downloadsDir: '' } };
 let caps = [];      // cápsulas persistidas (lib/capsules.js)
 let snaps = [];     // snapshots (lib/snapshots.js)
 let pending = [];   // pedidos de permissão aguardando resposta
@@ -215,8 +215,67 @@ function sync() {
     canBack: wc?.navigationHistory.canGoBack() ?? false,
     canForward: wc?.navigationHistory.canGoForward() ?? false,
     prompt: pending[0] ? { origin: pending[0].origin, label: pending[0].label } : null,
+    downloads: downloadState(),
     update: update.status === 'downloaded' ? update.version : null,
   });
+}
+
+// ---- downloads ----
+// Vão direto para a pasta escolhida em Preferências (padrão: Downloads do sistema), sem perguntar, como no Chrome.
+// O Chromium já marca o arquivo como "baixado da internet" (Windows), então o SmartScreen continua avisando.
+const downloads = new Set();     // em andamento
+let lastDownload = null;         // { at, file } do último concluído
+const trackedSessions = new WeakSet();
+const downloadsDir = () => {
+  const d = data.prefs.downloadsDir;
+  return d && fs.existsSync(d) ? d : app.getPath('downloads'); // pasta escolhida sumiu (pen drive): volta ao padrão
+};
+
+// "relatorio.pdf" -> "relatorio (1).pdf" se já existir
+function freePath(dir, name) {
+  const base = path.basename(name || 'download') || 'download';
+  const ext = path.extname(base);
+  const stem = base.slice(0, base.length - ext.length);
+  let file = path.join(dir, base);
+  for (let i = 1; fs.existsSync(file); i++) file = path.join(dir, `${stem} (${i})${ext}`);
+  return file;
+}
+
+let downloadTimer = null; // o progresso chega várias vezes por segundo: a barra é atualizada no máximo 4×/s
+const syncSoon = () => { downloadTimer ??= setTimeout(() => { downloadTimer = null; sync(); }, 250); };
+
+function trackDownloads(ses) {
+  if (trackedSessions.has(ses)) return;
+  trackedSessions.add(ses);
+  ses.on('will-download', (_e, item) => {
+    item.setSavePath(freePath(downloadsDir(), item.getFilename()));
+    downloads.add(item);
+    item.on('updated', syncSoon);
+    item.once('done', (_e2, state) => {
+      downloads.delete(item);
+      if (state === 'completed') lastDownload = { at: Date.now(), file: item.getSavePath() };
+      sync();
+    });
+    sync();
+  });
+}
+
+function downloadState() {
+  let got = 0, total = 0;
+  for (const d of downloads) { got += d.getReceivedBytes(); total += d.getTotalBytes(); }
+  // total 0 = o site não informou o tamanho: a barra fica "indeterminada"
+  return { active: downloads.size, progress: total > 0 ? got / total : null, doneAt: lastDownload?.at ?? 0 };
+}
+
+function openDownloads() {
+  if (lastDownload && fs.existsSync(lastDownload.file)) shell.showItemInFolder(lastDownload.file); // abre a pasta com o arquivo selecionado
+  else shell.openPath(downloadsDir());
+}
+
+// Política de segurança + downloads para cada sessão (Principal, cápsula, efêmera).
+function secure(s, decisions) {
+  ctxs.harden(s, { decisions, onAsk, onBlocked, serve });
+  trackDownloads(s);
 }
 
 // ---- atualização automática ----
@@ -453,7 +512,7 @@ function openEphemeral() {
   let e = ephemeral();
   if (!e) {
     e = ctxs.createContext('ephemeral', 'Sessão efêmera');
-    ctxs.harden(e.ses, { decisions: ctxs.memoryDecisions(), onAsk, onBlocked, serve }); // permissões também só na memória
+    secure(e.ses, ctxs.memoryDecisions()); // permissões também só na memória
     e.audit = createAudit(e.ses);
     contexts.set(e.id, e);
   }
@@ -534,7 +593,7 @@ function resumeCapsule(id) {
     // ponytail: permissões da cápsula ficam na memória (separadas do Principal) e são perguntadas de novo
     // depois de reabrir o navegador; guardar por cápsula se isso incomodar
     if (!capDecisions.has(id)) capDecisions.set(id, ctxs.memoryDecisions());
-    ctxs.harden(c.ses, { decisions: capDecisions.get(id), onAsk, onBlocked, serve });
+    secure(c.ses, capDecisions.get(id));
     contexts.set(id, c);
   }
   switchContext(c, cap);
@@ -638,6 +697,7 @@ const commands = {
   home: () => commands.go(SITE),
   newTab: () => newTab(),
   panel: () => openPanel(),
+  downloads: openDownloads,
   contexts: pos => contextsMenu(pos),
   ephemeral: openEphemeral,
   endEphemeral: () => endEphemeral(),
@@ -762,6 +822,7 @@ function panelData() {
     update,
     engines: Object.fromEntries(Object.entries(ENGINES).map(([k, v]) => [k, v.name])),
     prefs: data.prefs,
+    downloadsDir: downloadsDir(),
     bookmarks: data.bookmarks,
     history: data.history,
     importSources: importSources().map(({ file, ...s }) => s), // sem caminhos para o painel
@@ -814,6 +875,17 @@ const panelActions = {
     if (decisions[origin] && !Object.keys(decisions[origin]).length) delete decisions[origin];
     saveDecisions();
   },
+  // a pasta vem do seletor do sistema (nunca do painel), então o painel não consegue apontar para outro lugar
+  chooseDownloads: async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+      title: 'Pasta de downloads',
+      defaultPath: downloadsDir(),
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    if (!canceled && filePaths[0]) { data.prefs.downloadsDir = filePaths[0]; save(); }
+  },
+  resetDownloads: () => { data.prefs.downloadsDir = ''; save(); },
+  openDownloads: () => shell.openPath(downloadsDir()),
   uninstall: id => uninstallExtension(String(id), { session: ses }),
   clearData: async () => { await ses.clearStorageData(); await ses.clearCache(); },
   store: () => newTab(STORE),
@@ -1010,7 +1082,7 @@ app.whenReady().then(async () => {
   contexts.set(main.id, main);
   ctx = main;
   tabs = main.tabs;
-  ctxs.harden(ses, { decisions: globalDecisions, onAsk, onBlocked, serve });
+  secure(ses, globalDecisions);
 
   win = new BrowserWindow({
     width: 1280,

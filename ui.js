@@ -3,7 +3,25 @@ const $ = id => document.getElementById(id);
 const url = $('url');
 const X = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>'; // ícone estático, nunca dado de página
 
-for (const id of ['back', 'forward', 'reload', 'home', 'panel']) $(id).onclick = () => cmd(id);
+for (const id of ['back', 'forward', 'reload', 'home', 'panel', 'downloads']) $(id).onclick = () => cmd(id);
+
+// Botão de downloads: animação enquanto baixa e um brilho quando termina.
+let seenDone = null;
+function renderDownloads(d) {
+  const b = $('downloads');
+  const busy = d.active > 0;
+  b.classList.toggle('busy', busy);
+  b.classList.toggle('indet', busy && d.progress == null);
+  b.style.setProperty('--p', `${Math.round((d.progress ?? 0) * 100)}%`);
+  b.title = busy
+    ? `Baixando ${d.active} arquivo${d.active > 1 ? 's' : ''}${d.progress != null ? ` — ${Math.round(d.progress * 100)}%` : ''}`
+    : 'Downloads: abrir a pasta';
+  if (seenDone !== null && d.doneAt > seenDone && !busy) {
+    b.classList.remove('done'); void b.offsetWidth; b.classList.add('done'); // reinicia o brilho
+    setTimeout(() => b.classList.remove('done'), 1800);
+  }
+  seenDone = d.doneAt;
+}
 $('star').onclick = () => cmd('bookmark');
 $('plus').onclick = () => cmd('newTab');
 $('allow').onclick = () => cmd('permission', true);
@@ -107,6 +125,7 @@ onState(s => {
     : s.bookmarked ? 'Remover dos favoritos (Ctrl+D)' : 'Favoritar (Ctrl+D)';
 
   renderBookmarks(s.bookmarks);
+  renderDownloads(s.downloads);
 
   $('prompt').hidden = !s.prompt;
   if (s.prompt) {

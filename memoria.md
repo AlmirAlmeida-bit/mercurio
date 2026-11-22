@@ -28,7 +28,8 @@ Usa **Electron 45** (motor Chromium 156), é compatível com extensões da Chrom
 | Snapshots | Retrato das abas (Principal + cápsulas, nunca a efêmera). Manual, a cada 10 min se algo mudou, e ao fechar. Limite 10/20/50/100 (Preferências). Restaurar abre ao lado. Painel → Snapshots |
 | Sessão efêmera | `Ctrl+Shift+N`. Sessão só em memória, sem extensões nem histórico; página Auditoria (`mercurio://auditoria`) mostra navegações e requisições ao vivo (até 2.000), com Exportar JSON. Encerrar apaga abas, cookies, cache e o registro |
 | Sem internet | Quando uma página falha com erro de rede e um teste real de conexão (`lib/connectivity.js`: abre endereços de verificação da Microsoft/Google/Cloudflare, 2,5 s) confirma que não há internet, a aba mostra `offline.html`: "Enquanto sua internet não volta, aproveite" + jogo original (gota de mercúrio alada pulando torres e nuvens; espaço/↑/clique; recorde salvo). A barra mostra o site original e a página volta sozinha quando a conexão retorna |
-| Preferências | Buscador (DuckDuckGo, Google, Bing, Brave), tema (sistema/escuro/claro), **cor de destaque**, limpar cookies/cache |
+| Preferências | Buscador (DuckDuckGo, Google, Bing, Brave), **pasta de downloads**, tema (sistema/escuro/claro), **cor de destaque**, limpar cookies/cache |
+| Downloads (v0.3.1) | Vão direto para a pasta escolhida em Preferências (padrão: Downloads do sistema; se a pasta sumir, volta ao padrão), sem perguntar; nome repetido vira `arquivo (1).ext`. Botão ao lado da barra de endereço: seta descendo + linha fina de progresso na cor de destaque enquanto baixa, brilho neon ao terminar; clique abre a pasta (com o último arquivo selecionado). Vale para Principal, cápsulas e efêmera (`secure()` no `main.js`). O Windows continua marcando os arquivos como "baixados da internet" |
 | Aviso de direitos | Janela "© TresTech" com link para o site, na 1ª abertura **após cada instalação** |
 | Licenças | `THIRD-PARTY-NOTICES.txt` abre por Painel → Preferências → Sobre → "Licenças de terceiros" |
 
@@ -115,7 +116,7 @@ Feita com ataques reais (kit em HTTPS local com domínios falsos e extensões de
 | 14 | Pasta de cápsula excluída ficava no disco | Apagada ao abrir o navegador |
 
 Já estava certo: downloads recebem a marca "baixado da internet" do Windows (`ZoneId=3`); erros de certificado são recusados.
-**Kit de ataque:** `scripts/seguranca/attack.ps1` (código-fonte), `attack.ps1 -Exe <...>\win-unpacked\Mercurio.exe` (empacotado), `attack.ps1 -Script smoke.mjs` (funcionamento normal). Abre janelas do Mercurio por ~1 min; não mexer nelas. Todos os itens devem sair "BLOQUEADO"/0, exceto `item12c_popupComClique: 1`, `item7_saiuComEsc: true` e `idn_legitimo.carregou: true`.
+**Kit de ataque:** `scripts/seguranca/attack.ps1` (código-fonte), `attack.ps1 -Exe <...>\win-unpacked\Mercurio.exe` (empacotado), `attack.ps1 -Script smoke.mjs` (funcionamento normal). Abre janelas do Mercurio por ~1 min e as traz para a frente nos testes de clique e Esc (com a janela atrás de outra, o Chromium descarta cliques e teclas simulados); não mexer nelas. Todos os itens devem sair "BLOQUEADO"/0, exceto `item12c_popupComClique: 1`, `item7_saiuComEsc: true` e `idn_legitimo.carregou: true`.
 **Ao atualizar `electron-chrome-extensions` ou `electron-chrome-web-store`:** rodar o kit de ataque de novo (o `guardExtensionIds` depende de `extensions.ctx.router`; se a estrutura mudar, ele avisa no console).
 **Em aberto (decisão do Almir):** item 2 — assinatura digital do instalador e das atualizações. Sem ela, quem invadir a hospedagem do site consegue distribuir uma atualização falsa. Publicar só depois de ter o certificado. Remover `MERCURIO_UPDATE_URL` do app instalado quando assinar. O Mercurio não tem proteção contra sites de golpe/malware do Google (Safe Browsing), que o Electron não inclui.
 - **Aviso de direitos por instalação:** usa a data do executável como identificador, porque `%APPDATA%` sobrevive à reinstalação.
@@ -143,8 +144,8 @@ Já estava certo: downloads recebem a marca "baixado da internet" do Windows (`Z
 
 - [x] **Testar a segurança** do navegador: auditoria + correções na v0.3.0 (ver "Auditoria de segurança")
 - [ ] **Certificado de assinatura de código** (Windows; Apple depois). Almir só publica com ele. Opções levantadas em 21/11/2026: 1) Microsoft Store (a Microsoft assina o app; conta individual grátis, empresa ~US$ 99 uma vez; conferir a política para navegadores; electron-builder gera `appx`) — ficou de eu preparar o pacote para teste; 2) Trusted/Artifact Signing da Microsoft (~US$ 10/mês; conferir se já atende o Brasil); 3) Certum/Sectigo (US$ 100–400/ano). Mac: Apple Developer US$ 99/ano. Certificados grátis (SignPath, Certum Open Source) são só para código aberto
-- [ ] **Atualizar instaladores de Mac e Linux** (em `dist` ainda estão na 0.1.0; Windows já está na 0.3.0). Rodar o GitHub Actions manualmente (Actions → Build → Run workflow, sem tag para não publicar em Releases), baixar os Artifacts e colocar em `dist\mac` e `dist\linux`
-- [ ] **Limpar `dist\windows`:** apagar os instaladores de teste 0.2.0 a 0.2.6 e o `builder-debug.yml`, deixando só o 0.3.0 (+ `.blockmap` e `latest.yml`)
+- [ ] **Atualizar instaladores de Mac e Linux** (em `dist` ainda estão na 0.1.0; Windows já está na 0.3.1). Rodar o GitHub Actions manualmente (Actions → Build → Run workflow, sem tag para não publicar em Releases), baixar os Artifacts e colocar em `dist\mac` e `dist\linux`
+- [ ] **Limpar `dist\windows`:** apagar os instaladores de teste 0.2.0 a 0.3.0 e o `builder-debug.yml`, deixando só o mais novo (+ `.blockmap` e `latest.yml`)
 - [ ] **Planejar o site de distribuição** (agenda de 21/11/2026). Com o repositório privado, os Releases do GitHub deixam de ser públicos
 - [ ] Tornar o repositório privado (Almir vai fazer)
 - [x] Release v0.1.0 publicada com os 8 instaladores: https://github.com/AlmirAlmeida-bit/mercurio/releases/tag/v0.1.0

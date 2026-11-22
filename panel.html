@@ -87,6 +87,9 @@
   .setting { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; flex-wrap: wrap; }
   .setting + .setting { border-top: 1px solid var(--line); }
   .setting p { margin: 2px 0 0; color: var(--dim); font-size: 12.5px; }
+  .setting .path { max-width: 46ch; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .setting .btns { display: flex; gap: 6px; }
+  .setting .btns .btn { height: 32px; padding: 0 14px; }
   .ok { color: var(--dim); }
   .swatches { display: flex; gap: 10px; flex-wrap: wrap; }
   .sw { position: relative; width: 28px; height: 28px; border-radius: 2px; background: var(--c); cursor: pointer;
