@@ -7,8 +7,8 @@ const path = require('node:path');
 
 const PIX = {
   chave: '1df34532-bb39-43e5-a935-cd187e4cf3be', // chave aleatória (não expõe CPF/telefone/e-mail)
-  nome: 'ALMIR ALMEIDA',                          // como no banco; até 25 letras, sem acento
-  cidade: 'RIO DE JANEIRO',                       // até 15 letras, sem acento
+  nome: 'Almir Almeida da Silva',                 // como no banco; até 25 letras (no código vai em maiúsculas, sem acento)
+  cidade: 'Rio de Janeiro',                       // até 15 letras
 };
 
 const campo = (id, valor) => id + String(valor.length).padStart(2, '0') + valor;
