@@ -58,6 +58,10 @@
 const { app, BrowserWindow, WebContentsView, Menu, MenuItem, clipboard, dialog, ipcMain, nativeImage, nativeTheme, net, protocol, session, shell } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
+const os = require('node:os');
+const crypto = require('node:crypto');
+const { execFileSync } = require('node:child_process');
+const bookmarksLib = require('./lib/bookmarks');
 const { pathToFileURL } = require('node:url');
 const { ElectronChromeExtensions } = require('electron-chrome-extensions');
 const { installChromeWebStore, uninstallExtension } = require('electron-chrome-web-store');
@@ -795,70 +799,126 @@ function extIcon(ext) {
   return img.isEmpty() ? null : img.resize({ width: 48, quality: 'best' }).toDataURL();
 }
 
-// ---- importar favoritos do Chrome (e Edge/Brave, que usam o mesmo formato) ----
+// ---- importar favoritos (Chrome, Edge, Brave, Vivaldi, Opera… e arquivo exportado) ----
+// Formatos em lib/bookmarks.js. Em PCs de empresa os favoritos costumam estar fora do lugar padrão: pasta definida
+// pela TI (política UserDataDir), perfil móvel em %APPDATA%, perfis com nomes próprios ou favoritos da conta Google
+// em "AccountBookmarks". Se nada for achado, "Importar de um arquivo…" aceita o .html exportado por qualquer navegador.
 
-function chromiumDirs() {
-  const home = app.getPath('home');
-  const local = process.env.LOCALAPPDATA ?? '';
-  const mac = path.join(home, 'Library', 'Application Support');
-  const cfg = path.join(home, '.config');
-  return {
-    win32: [['Google Chrome', path.join(local, 'Google', 'Chrome', 'User Data')],
-      ['Microsoft Edge', path.join(local, 'Microsoft', 'Edge', 'User Data')],
-      ['Brave', path.join(local, 'BraveSoftware', 'Brave-Browser', 'User Data')]],
-    darwin: [['Google Chrome', path.join(mac, 'Google', 'Chrome')],
-      ['Microsoft Edge', path.join(mac, 'Microsoft Edge')],
-      ['Brave', path.join(mac, 'BraveSoftware', 'Brave-Browser')]],
-    linux: [['Google Chrome', path.join(cfg, 'google-chrome')], ['Chromium', path.join(cfg, 'chromium')],
-      ['Microsoft Edge', path.join(cfg, 'microsoft-edge')], ['Brave', path.join(cfg, 'BraveSoftware', 'Brave-Browser')]],
-  }[process.platform] ?? [];
-}
-
-// Lê o arquivo "Bookmarks" de um perfil. Pastas são achatadas (o Mercurio não tem pastas).
-function readChromiumBookmarks(file) {
-  let roots;
-  try { roots = JSON.parse(fs.readFileSync(file, 'utf8')).roots; } catch { return []; }
-  const out = [];
-  const walk = n => {
-    if (!n) return;
-    if (n.type === 'url' && isWeb(n.url)) out.push({ url: n.url, title: String(n.name || n.url).slice(0, 300) });
-    (n.children ?? []).forEach(walk);
+// Pasta definida pela TI (política UserDataDir), lida do registro. Variáveis: chromeenterprise.google/policies/#UserDataDir
+function policyDirs() {
+  if (process.platform !== 'win32') return [];
+  const vars = {
+    local_app_data: process.env.LOCALAPPDATA, roaming_app_data: process.env.APPDATA, profile: process.env.USERPROFILE,
+    user_name: os.userInfo().username, machine_name: os.hostname(), documents: app.getPath('documents'),
   };
-  ['bookmark_bar', 'other', 'synced'].forEach(k => walk(roots?.[k]));
-  return out;
-}
-
-// Perfis encontrados neste computador. O painel só recebe o id; o caminho fica aqui.
-function importSources() {
+  const expand = s => s.replace(/\$\{(\w+)\}/g, (m, k) => vars[k] ?? m).replace(/%(\w+)%/g, (m, k) => process.env[k] ?? m);
   const out = [];
-  for (const [browser, dir] of chromiumDirs()) {
-    let profiles;
-    try { profiles = fs.readdirSync(dir).filter(p => p === 'Default' || /^Profile \d+$/.test(p)); } catch { continue; }
-    let names = {};
-    try { names = JSON.parse(fs.readFileSync(path.join(dir, 'Local State'), 'utf8')).profile.info_cache ?? {}; } catch {}
-    for (const p of profiles) {
-      const file = path.join(dir, p, 'Bookmarks');
-      const count = readChromiumBookmarks(file).length;
-      if (count) out.push({ id: `${browser}|${p}`, browser, profile: names[p]?.name || p, count, file });
+  for (const [browser, key] of [['Google Chrome', 'Google\\Chrome'], ['Microsoft Edge', 'Microsoft\\Edge']]) {
+    for (const hive of ['HKCU', 'HKLM']) {
+      try {
+        const r = execFileSync('reg', ['query', `${hive}\\Software\\Policies\\${key}`, '/v', 'UserDataDir'], { encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
+        const v = /UserDataDir\s+REG_\w+\s+(.+)/.exec(r)?.[1]?.trim();
+        if (v) out.push([browser, expand(v)]);
+      } catch {} // sem a política: o reg sai com erro
     }
   }
   return out;
 }
 
-function importBookmarks(id) {
-  const src = importSources().find(s => s.id === id);
-  if (!src) throw new Error('Perfil não encontrado');
+function browserDirs() {
+  const home = app.getPath('home');
+  const local = process.env.LOCALAPPDATA ?? '';
+  const roaming = process.env.APPDATA ?? '';
+  const mac = path.join(home, 'Library', 'Application Support');
+  const cfg = path.join(home, '.config');
+  const list = {
+    win32: [
+      ['Google Chrome', path.join(local, 'Google', 'Chrome', 'User Data')],
+      ['Google Chrome', path.join(roaming, 'Google', 'Chrome', 'User Data')], // perfil móvel (empresas)
+      ['Google Chrome Beta', path.join(local, 'Google', 'Chrome Beta', 'User Data')],
+      ['Google Chrome Canary', path.join(local, 'Google', 'Chrome SxS', 'User Data')],
+      ['Chromium', path.join(local, 'Chromium', 'User Data')],
+      ['Microsoft Edge', path.join(local, 'Microsoft', 'Edge', 'User Data')],
+      ['Microsoft Edge Beta', path.join(local, 'Microsoft', 'Edge Beta', 'User Data')],
+      ['Microsoft Edge Dev', path.join(local, 'Microsoft', 'Edge Dev', 'User Data')],
+      ['Brave', path.join(local, 'BraveSoftware', 'Brave-Browser', 'User Data')],
+      ['Vivaldi', path.join(local, 'Vivaldi', 'User Data')],
+      ['Opera', path.join(roaming, 'Opera Software', 'Opera Stable')],
+      ['Opera GX', path.join(roaming, 'Opera Software', 'Opera GX Stable')],
+    ],
+    darwin: [['Google Chrome', path.join(mac, 'Google', 'Chrome')], ['Chromium', path.join(mac, 'Chromium')],
+      ['Microsoft Edge', path.join(mac, 'Microsoft Edge')], ['Brave', path.join(mac, 'BraveSoftware', 'Brave-Browser')],
+      ['Vivaldi', path.join(mac, 'Vivaldi')], ['Opera', path.join(mac, 'com.operasoftware.Opera')]],
+    linux: [['Google Chrome', path.join(cfg, 'google-chrome')], ['Chromium', path.join(cfg, 'chromium')],
+      ['Microsoft Edge', path.join(cfg, 'microsoft-edge')], ['Brave', path.join(cfg, 'BraveSoftware', 'Brave-Browser')],
+      ['Vivaldi', path.join(cfg, 'vivaldi')], ['Opera', path.join(cfg, 'opera')]],
+  }[process.platform] ?? [];
+  const seen = new Set();
+  return [...policyDirs(), ...list].filter(([, dir]) => !seen.has(dir.toLowerCase()) && seen.add(dir.toLowerCase()));
+}
+
+const BOOKMARK_FILES = ['Bookmarks', 'AccountBookmarks']; // AccountBookmarks: favoritos da conta Google sem sincronizar
+const readBookmarkFile = file => { try { return bookmarksLib.parse(fs.readFileSync(file, 'utf8')); } catch { return []; } };
+
+// Perfis encontrados neste computador. O painel só recebe o id; o caminho fica aqui.
+function importSources() {
+  const out = [];
+  for (const [browser, dir] of browserDirs()) {
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+    let names = {};
+    try { names = JSON.parse(fs.readFileSync(path.join(dir, 'Local State'), 'utf8')).profile.info_cache ?? {}; } catch {}
+    // qualquer pasta de perfil com favoritos (perfis de trabalho têm nomes próprios); '' = favoritos na raiz (Opera)
+    const profiles = ['', ...entries.filter(e => e.isDirectory()).map(e => e.name)];
+    for (const p of profiles) {
+      const files = BOOKMARK_FILES.map(f => path.join(dir, p, f)).filter(f => fs.existsSync(f));
+      const count = new Set(files.flatMap(readBookmarkFile).map(b => b.url)).size;
+      if (!count) continue;
+      const id = `${browser}|${p}|${crypto.createHash('sha1').update(dir).digest('hex').slice(0, 8)}`;
+      out.push({ id, browser, profile: names[p]?.name || p || 'Padrão', count, files });
+    }
+  }
+  return out;
+}
+
+// Junta favoritos novos (sem repetir endereço). Devolve quantos entraram.
+function addBookmarks(list) {
   const have = new Set(data.bookmarks.map(b => b.url));
   const t = Date.now();
-  // unshift em ordem: na barra (ordem inversa) eles entram depois dos atuais, na ordem do Chrome
-  for (const b of readChromiumBookmarks(src.file)) {
+  let added = 0;
+  // unshift em ordem: na barra (ordem inversa) eles entram depois dos atuais, na ordem do outro navegador
+  for (const b of list) {
     if (have.has(b.url)) continue;
     have.add(b.url);
     data.bookmarks.unshift({ ...b, t });
+    added++;
   }
   save();
   layout();
   sync();
+  return added;
+}
+
+function importBookmarks(id) {
+  const src = importSources().find(s => s.id === id);
+  if (!src) throw new Error('Perfil não encontrado');
+  addBookmarks(src.files.flatMap(readBookmarkFile));
+}
+
+// "Importar de um arquivo…": .html exportado por qualquer navegador, ou o próprio arquivo Bookmarks.
+let fileImport = null; // { found, added } da última importação por arquivo (o painel mostra o resultado)
+async function importBookmarksFile() {
+  fileImport = null;
+  const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+    title: 'Importar favoritos de um arquivo',
+    defaultPath: app.getPath('downloads'),
+    filters: [{ name: 'Favoritos exportados (.html) ou arquivo Bookmarks', extensions: ['html', 'htm', 'json', '*'] }],
+    properties: ['openFile'],
+  });
+  if (canceled || !filePaths[0]) return;
+  if (fs.statSync(filePaths[0]).size > 50 * 1024 * 1024) { fileImport = { found: 0, added: 0 }; return; } // não é favorito
+  const list = readBookmarkFile(filePaths[0]);
+  fileImport = { found: list.length, added: list.length ? addBookmarks(list) : 0 };
 }
 
 function panelData() {
@@ -870,7 +930,8 @@ function panelData() {
     downloadsDir: downloadsDir(),
     bookmarks: data.bookmarks,
     history: data.history,
-    importSources: importSources().map(({ file, ...s }) => s), // sem caminhos para o painel
+    importSources: importSources().map(({ files, ...s }) => s), // sem caminhos para o painel
+    fileImport,
     permissions: Object.entries(decisions).flatMap(([origin, perms]) =>
       Object.entries(perms).map(([perm, allow]) => ({ origin, perm, allow }))),
     extensions: (ses.extensions ?? ses).getAllExtensions().map(x => ({
@@ -937,6 +998,7 @@ const panelActions = {
   notices: () => newTab(NOTICES),
   donate: () => openApoiar(),
   importBookmarks: id => importBookmarks(String(id)),
+  importBookmarksFile: () => importBookmarksFile(),
   createCapsule: name => { createCapsule(name); },
   renameCapsule: ({ id, name }) => renameCapsule(String(id), name),
   noteCapsule: ({ id, notes }) => { capsules.update(caps, String(id), { notes }); capStore.save(); },

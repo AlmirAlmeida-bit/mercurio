@@ -232,10 +232,24 @@ const UPDATE = {
 
 // Um botão por perfil do Chrome/Edge/Brave encontrado neste computador.
 function importBox() {
-  if (!d.importSources.length) {
-    return h('div', { class: 'list' }, h('div', { class: 'empty' }, 'Nenhum Chrome, Edge ou Brave com favoritos neste computador.'));
-  }
-  return h('div', { class: 'list' }, d.importSources.map(s => {
+  const fileStatus = h('span', { class: 'ok' });
+  const fileBtn = h('button', { class: 'act go', onclick: async () => {
+    fileBtn.disabled = true;
+    try {
+      d = await call('importBookmarksFile');
+      const r = d.fileImport;
+      fileStatus.textContent = !r ? '' // cancelou
+        : !r.found ? 'Nenhum favorito nesse arquivo'
+        : r.added ? `${r.added} importado${r.added > 1 ? 's' : ''} ✓` : 'Já estavam todos aqui ✓';
+    } catch { fileStatus.textContent = 'Não foi possível ler o arquivo'; }
+    fileBtn.disabled = false;
+  } }, 'Escolher arquivo…');
+  const fileRow = h('div', { class: 'row' },
+    h('div', { class: 'main' }, h('div', { class: 't' }, 'Importar de um arquivo'),
+      h('div', { class: 'u', title: 'No Chrome/Edge: Ctrl+Shift+O → ⋮ → Exportar favoritos. No Firefox: Ctrl+Shift+O → Importar e backup → Exportar favoritos para HTML.' },
+        'Exporte os favoritos no outro navegador (Ctrl+Shift+O → Exportar) e escolha o .html')),
+    fileStatus, fileBtn);
+  const found = d.importSources.map(s => {
     const status = h('span', { class: 'ok' });
     const btn = h('button', { class: 'act go', onclick: async () => {
       btn.disabled = true;
@@ -252,7 +266,10 @@ function importBox() {
     return h('div', { class: 'row' },
       h('div', { class: 'main' }, h('div', { class: 't' }, s.browser), h('div', { class: 'u' }, `${/^perfil/i.test(s.profile) ? '' : 'Perfil '}${s.profile} · ${s.count} favorito${s.count > 1 ? 's' : ''}`)),
       status, btn);
-  }));
+  });
+  const none = h('div', { class: 'row' }, h('div', { class: 'main' }, h('div', { class: 'u' },
+    'Nenhum navegador com favoritos foi encontrado automaticamente (em computadores de empresa eles podem ficar em outro lugar). Use a opção abaixo.')));
+  return h('div', { class: 'list' }, found.length ? found : none, fileRow);
 }
 
 function render() {
