@@ -95,10 +95,10 @@ onState(s => {
   $('ctx').setAttribute('aria-label', `Contexto atual: ${s.context.name}`);
   $('tabs').replaceChildren(...s.tabs.map((t, i) => {
     const el = document.createElement('div');
-    el.className = 'tab' + (i === s.active ? ' on' : '');
+    el.className = 'tab' + (i === s.active ? ' on' : '') + (t.asleep ? ' asleep' : '');
     el.setAttribute('role', 'tab');
     el.setAttribute('aria-selected', i === s.active);
-    el.title = t.title;
+    el.title = t.asleep ? `${t.title}\nAdormecida para economizar memória: volta ao clicar` : t.title;
     el.onmousedown = e => e.button === 0 && cmd('select', i);
     el.onauxclick = e => e.button === 1 && cmd('close', i);
 

@@ -130,7 +130,7 @@ const ASK = {
 
 let win, ses, extensions, decisionsFile, dataStore, capStore, snapStore;
 let decisions = {}; // { origin: { permissão: true|false } } — contexto principal e cápsulas
-let data = { bookmarks: [], history: [], prefs: { search: 'duckduckgo', theme: 'system', accent: NEON_DEFAULT, bookmarksBar: 'show', snapshotsMax: snapshots.DEFAULT_MAX, downloadsDir: '' } };
+let data = { bookmarks: [], history: [], prefs: { search: 'duckduckgo', theme: 'system', accent: NEON_DEFAULT, bookmarksBar: 'show', snapshotsMax: snapshots.DEFAULT_MAX, downloadsDir: '', sleepAfter: 10 } };
 let caps = [];      // cápsulas persistidas (lib/capsules.js)
 let snaps = [];     // snapshots (lib/snapshots.js)
 let pending = [];   // pedidos de permissão aguardando resposta
@@ -220,6 +220,7 @@ function sync() {
       loading: v.webContents.isLoading(),
       favicon: v.icon,
       panel: isInternal(v.webContents.getURL()),
+      asleep: !!v.sleep,
     })),
     active,
     accent: data.prefs.accent,
@@ -317,6 +318,7 @@ function popupsMenu(pos) {
 function secure(s, decisions) {
   ctxs.harden(s, { decisions, onAsk, onBlocked, serve });
   trackDownloads(s);
+  s.setSpellCheckerEnabled(false); // sem dicionários na memória (o Mercurio não oferece correção)
 }
 
 // ---- atualização automática ----
@@ -352,7 +354,56 @@ function layout() {
   for (const v of tabs) v.setBounds({ x: 0, y: top, width, height: height - top });
 }
 
+// ---- economia de memória ----
+// Abas paradas em segundo plano há data.prefs.sleepAfter minutos "adormecem": a página é fechada (libera a memória)
+// e fica no lugar um marcador leve com endereço, título, ícone e o histórico de voltar/avançar. Ao clicar, a página
+// volta com o histórico (navigationHistory.restore). Nunca adormece: aba visível, tocando som, em tela cheia,
+// carregando, páginas internas.
+const SLEEP_CHOICES = [0, 5, 10, 30]; // minutos; 0 = desligado
+const sleepingWc = s => ({
+  getURL: () => s.url, getTitle: () => s.title, isLoading: () => false, isDestroyed: () => false, close() {},
+  navigationHistory: { canGoBack: () => s.index > 0, canGoForward: () => s.index < s.entries.length - 1 },
+});
+
+function sleepTab(c, i) {
+  const v = c.tabs[i];
+  const wc = v.webContents;
+  const h = wc.navigationHistory;
+  const s = { url: wc.getURL(), title: wc.getTitle(), entries: h.getAllEntries(), index: h.getActiveIndex() };
+  c.tabs[i] = { sleep: s, ctx: v.ctx, icon: v.icon, favicon: v.favicon, lastSeen: v.lastSeen, webContents: sleepingWc(s), setVisible() {}, setBounds() {} };
+  closeView(v);
+}
+
+function wake(i) {
+  const s = tabs[i].sleep;
+  if (!s) return;
+  const old = tabs[i];
+  const view = newTab(s.url, { at: i });
+  view.icon = old.icon;
+  view.favicon = old.favicon;
+  view.webContents.navigationHistory.restore({ entries: s.entries, index: s.index }).catch(() => view.webContents.loadURL(s.url));
+}
+
+function sleepIdleTabs() {
+  const after = Number(process.env.MERCURIO_SONO_MS) || (data.prefs.sleepAfter ?? 0) * 60 * 1000; // variável: só para testes
+  if (!after) return;
+  const now = Date.now();
+  let changed = false;
+  for (const c of contexts.values()) {
+    c.tabs.forEach((v, i) => {
+      if (v.sleep || (c === ctx && i === active)) return;
+      const wc = v.webContents;
+      if (now - (v.lastSeen ?? now) < after || !isWeb(wc.getURL()) || wc.isLoading() || wc.isCurrentlyAudible() || wc === fullscreenWc) return;
+      sleepTab(c, i);
+      changed = true;
+    });
+  }
+  if (changed) sync();
+}
+
 function select(i) {
+  if (tabs[active] && active !== i) tabs[active].lastSeen = Date.now(); // a que sai de vista começa a contar
+  if (tabs[i]?.sleep) wake(i);
   active = ctx.active = i;
   tabs.forEach((v, j) => v.setVisible(j === i));
   layout();
@@ -363,7 +414,7 @@ function select(i) {
 // Troca o contexto visível. `seed` (abas guardadas) é aberto se o contexto estiver vazio.
 function switchContext(c, seed) {
   if (c !== ctx) {
-    if (ctx) { ctx.active = active; ctx.tabs.forEach(v => v.setVisible(false)); }
+    if (ctx) { ctx.active = active; if (ctx.tabs[active]) ctx.tabs[active].lastSeen = Date.now(); ctx.tabs.forEach(v => v.setVisible(false)); }
     ctx = c;
     tabs = c.tabs;
     active = c.active;
@@ -375,8 +426,9 @@ function switchContext(c, seed) {
   select(Math.max(0, Math.min(seed.active ?? 0, tabs.length - 1)));
 }
 
-// Abre uma aba no contexto visível.
-function newTab(url) {
+// Abre uma aba no contexto visível. `at`: acorda uma aba adormecida nessa posição (não carrega nem seleciona:
+// quem chama restaura o histórico e o select() segue).
+function newTab(url, { at } = {}) {
   url = url || (ctx === main && extensions.getURLOverrides().newtab) || home();
   const owner = ctx;
   const internal = isInternal(url);
@@ -386,11 +438,13 @@ function newTab(url) {
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
+      spellcheck: false, // o Mercurio não oferece correção: não carregar dicionários
       // só as páginas internas (painel, auditoria) recebem a ponte com o navegador
       preload: internal ? path.join(__dirname, 'panel-preload.js') : undefined,
     },
   });
   view.ctx = owner;
+  view.lastSeen = Date.now();
   const wc = view.webContents;
   // Bloqueador de pop-ups: pop-ups viram abas do mesmo contexto, e só com clique ou tecla recente na aba visível
   // (um por gesto), como no Chrome. O resto é bloqueado e aparece no ícone da barra de endereço, onde dá para abrir
@@ -447,9 +501,10 @@ function newTab(url) {
   }
   wc.on('context-menu', (_e, p) => contextMenu(wc, p));
   shortcuts(wc);
-  tabs.push(view);
+  if (at != null) tabs[at] = view; else tabs.push(view);
   win.contentView.addChildView(view);
   if (owner === main) extensions.addTab(wc, win);
+  if (at != null) return view;
   select(tabs.length - 1);
   wc.loadURL(url);
   return view;
@@ -484,6 +539,7 @@ function dropPending(pred) {
 }
 
 function closeView(v) {
+  if (v.sleep) return; // aba adormecida: não há página aberta
   dropPending(p => p.wc === v.webContents);
   win.contentView.removeChildView(v);
   v.webContents.close();
@@ -967,6 +1023,7 @@ const panelActions = {
     if (key === 'theme' && ['system', 'dark', 'light'].includes(value)) nativeTheme.themeSource = data.prefs.theme = value;
     if (key === 'accent' && isAccent(value)) data.prefs.accent = value;
     if (key === 'bookmarksBar' && ['show', 'hide'].includes(value)) data.prefs.bookmarksBar = value;
+    if (key === 'sleepAfter' && SLEEP_CHOICES.includes(Number(value))) data.prefs.sleepAfter = Number(value);
     if (key === 'snapshotsMax') {
       data.prefs.snapshotsMax = snapshots.clampMax(value);
       snaps = snaps.slice(0, data.prefs.snapshotsMax);
@@ -1228,6 +1285,7 @@ app.whenReady().then(async () => {
   newTab();
   win.show();
   setInterval(() => takeSnapshot('auto'), SNAPSHOT_EVERY);
+  setInterval(sleepIdleTabs, Number(process.env.MERCURIO_SONO_CHECA) || 30 * 1000); // economia de memória
   setupUpdates();
   firstRunNotice();
   data.donate = donate.init(data.donate, Date.now()); save();
