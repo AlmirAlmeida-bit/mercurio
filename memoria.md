@@ -1,6 +1,6 @@
 # Memória do projeto Mercurio
 
-> Atualizado em 20/11/2026. Resumo do que existe, por que foi feito assim e o que falta.
+> Atualizado em 23/11/2026. Resumo do que existe, por que foi feito assim e o que falta.
 
 ## O que é
 
@@ -8,7 +8,7 @@
 Usa **Electron 45** (motor Chromium 156), é compatível com extensões da Chrome Web Store e tem visual minimalista inspirado no deus Mercúrio.
 
 - Repositório: https://github.com/AlmirAlmeida-bit/mercurio (público hoje, **vai ficar privado**)
-- Versão atual: **0.2.0** (em teste local; a última publicada no GitHub é a `v0.1.0`, de 20/11/2026)
+- Versão atual: **0.3.10** (em teste local; a última publicada no GitHub é a `v0.1.0`, de 20/11/2026)
 - Nome da empresa confirmado: **TresTech** (o site se apresenta como "3tech", mas o nome oficial é TresTech)
 
 ## Funcionalidades
@@ -28,7 +28,7 @@ Usa **Electron 45** (motor Chromium 156), é compatível com extensões da Chrom
 | Snapshots | Retrato das abas (Principal + cápsulas, nunca a efêmera). Manual, a cada 10 min se algo mudou, e ao fechar. Limite 10/20/50/100 (Preferências). Restaurar abre ao lado. Painel → Snapshots |
 | Sessão efêmera | `Ctrl+Shift+N`. Sessão só em memória, sem extensões nem histórico; página Auditoria (`mercurio://auditoria`) mostra navegações e requisições ao vivo (até 2.000), com Exportar JSON. Encerrar apaga abas, cookies, cache e o registro |
 | Sem internet | Quando uma página falha com erro de rede e um teste real de conexão (`lib/connectivity.js`: abre endereços de verificação da Microsoft/Google/Cloudflare, 2,5 s) confirma que não há internet, a aba mostra `offline.html`: "Enquanto sua internet não volta, aproveite" + jogo original (gota de mercúrio alada pulando torres e nuvens; espaço/↑/clique; recorde salvo). A barra mostra o site original e a página volta sozinha quando a conexão retorna |
-| Preferências | Buscador (DuckDuckGo, Google, Bing, Brave), **pasta de downloads**, tema (sistema/escuro/claro), **cor de destaque**, limpar cookies/cache |
+| Preferências | Buscador (DuckDuckGo, Google, Bing, Brave), **pasta de downloads**, **economia de memória**, tema (sistema/escuro/claro), **cor de destaque**, limpar cookies/cache, importar favoritos, Sobre (versão, atualização, licenças, Apoiar o Mercurio) |
 | Bloqueador de pop-ups (v0.3.3) | Pop-up só abre com clique/tecla recente na aba visível (um por gesto). Os bloqueados aparecem num ícone neon com a quantidade dentro da barra de endereço; o menu dele abre um pop-up, "Sempre permitir pop-ups de <site>" (decisão `popups`, no Principal fica em `permissions.json` e aparece em Preferências → Permissões dos sites com Revogar; cápsulas/efêmera só em memória) ou "Continuar bloqueando". O ícone some ao mudar de página. Mesmo com o site liberado, o Chromium limita scripts que abrem dezenas de janelas (abriram 4 de 20 no teste) |
 | Downloads (v0.3.1) | Vão direto para a pasta escolhida em Preferências (padrão: Downloads do sistema; se a pasta sumir, volta ao padrão), sem perguntar; nome repetido vira `arquivo (1).ext`. Botão ao lado da barra de endereço: seta descendo + linha fina de progresso na cor de destaque enquanto baixa, brilho neon ao terminar; clique abre a pasta (com o último arquivo selecionado). Vale para Principal, cápsulas e efêmera (`secure()` no `main.js`). O Windows continua marcando os arquivos como "baixados da internet" |
 | Pedido de doação (v0.3.4) | Estilo WinRAR, discreto: janela "Apoie o Mercurio" (logo + "O Mercurio é gratuito e feito no Brasil"), com Agora não / Apoiar o Mercurio. Só após **7 dias** de uso e depois **a cada 15 dias**, **2 min** depois de abrir. **Sem opção "não perguntar mais"** (pedido do Almir, v0.3.7): fechar só adia até o próximo ciclo. Botão fixo em Preferências → Sobre. Abre a página interna **`mercurio://apoiar`** (`apoiar.html`, v0.3.5): QR code do Pix + "Pix copia e cola" com botão Copiar, valor livre. Pix: chave aleatória `1df34532-…-cd187e4cf3be`, recebedor "Almir Almeida da Silva", "Rio de Janeiro" (na página assim; no código Pix em maiúsculas sem acento). Para trocar: editar `PIX` em `scripts/pix.js` e rodar `npm run pix` (regera `assets/pix.png` e `pix-dados.js`; o autoteste confere o CRC com o exemplo do Banco Central). O QR foi conferido com um leitor independente. Estado em `data.json` → `donate`. Para testar: `MERCURIO_DOAR_EM=3000` (ms até o pedido) e um `data.json` com `donate.since` antigo |
@@ -58,6 +58,13 @@ Usa **Electron 45** (motor Chromium 156), é compatível com extensões da Chrom
 | `url.js` | Converte o que foi digitado em endereço ou busca. Tem autoteste: `npm test` |
 | `lib/hosts.js` | Detecta endereços falsos (letras de alfabetos misturados, sósias cirílicos/gregos, domínio que imita a Chrome Web Store) e decide como mostrar nomes com acento na barra. Autoteste no `npm test` |
 | `aviso.html` / `aviso.js` | Página "O Mercurio bloqueou um possível site falso" |
+| `apoiar.html` / `apoiar.js` | Página de doação `mercurio://apoiar` (QR do Pix + copia e cola) |
+| `pix-dados.js`, `assets/pix.png` | Código Pix e QR gerados por `npm run pix` (não editar à mão) |
+| `scripts/pix.js` | Dados do Pix (`PIX`), monta o código BR Code com CRC e gera os dois arquivos acima |
+| `lib/donate.js` | Regras do pedido de doação (7 dias de uso, a cada 15 dias). Autoteste no `npm test` |
+| `lib/bookmarks.js` | Lê favoritos do Chrome/Edge (JSON) e arquivos `.html` exportados. Autoteste no `npm test` |
+| `lib/connectivity.js` | Teste real de conexão (página sem internet). Autoteste no `npm test` |
+| `scripts/seguranca/` | Kit de ataque e teste de funcionamento (ver "Auditoria de segurança") |
 | `logo.png` | Arte original do logo: ☿ estilizado em traços neon (verde/ciano/magenta), fundo transparente. Trocado em 21/11/2026 (o atual tem só 257×288 px; um maior deixa o ícone mais nítido) |
 | `assets/logo.png`, `assets/icon.png` | Gerados a partir do `logo.png` por `npm run icon` |
 | `scripts/icon.js` | Encaixa o logo inteiro (sem cortar) num quadrado transparente para uso no app, e faz o ícone do app com o logo sobre fundo preto |
@@ -71,7 +78,8 @@ Dados do usuário ficam em `%APPDATA%\Mercurio` (Windows): `data.json` (favorito
 ```bash
 npm install          # instalar dependências
 npm start            # rodar em desenvolvimento
-npm test             # autotestes (barra de endereço, snapshots, conexão, domínios falsos)
+npm test             # autotestes (barra de endereço, snapshots, conexão, domínios falsos, doação, favoritos)
+npm run pix          # regerar QR e código do Pix após mudar scripts/pix.js
 npm run icon         # regerar logo/ícone a partir de logo.png
 npm run notices      # regerar THIRD-PARTY-NOTICES.txt (após mudar dependências)
 npm run dist:win     # instalador Windows  -> dist/windows/
@@ -124,7 +132,7 @@ Feita com ataques reais (kit em HTTPS local com domínios falsos e extensões de
 Já estava certo: downloads recebem a marca "baixado da internet" do Windows (`ZoneId=3`); erros de certificado são recusados.
 **Kit de ataque:** `scripts/seguranca/attack.ps1` (código-fonte), `attack.ps1 -Exe <...>\win-unpacked\Mercurio.exe` (empacotado), `attack.ps1 -Script smoke.mjs` (funcionamento normal). Abre janelas do Mercurio por ~1 min e as traz para a frente nos testes de clique e Esc (com a janela atrás de outra, o Chromium descarta cliques e teclas simulados); não mexer nelas. Todos os itens devem sair "BLOQUEADO"/0, exceto `item12c_popupComClique: 1`, `item7_saiuComEsc: true` e `idn_legitimo.carregou: true`.
 **Ao atualizar `electron-chrome-extensions` ou `electron-chrome-web-store`:** rodar o kit de ataque de novo (o `guardExtensionIds` depende de `extensions.ctx.router`; se a estrutura mudar, ele avisa no console).
-**Em aberto (decisão do Almir):** item 2 — assinatura digital do instalador e das atualizações. Sem ela, quem invadir a hospedagem do site consegue distribuir uma atualização falsa. Publicar só depois de ter o certificado. Remover `MERCURIO_UPDATE_URL` do app instalado quando assinar. O Mercurio não tem proteção contra sites de golpe/malware do Google (Safe Browsing), que o Electron não inclui.
+**Em aberto (decisão do Almir):** item 2 — assinatura digital do instalador e das atualizações. Sem ela, quem invadir a hospedagem do site consegue distribuir uma atualização falsa. Publicar só depois de ter o certificado. Remover `MERCURIO_UPDATE_URL` do app instalado quando assinar. (O bloqueio de login do Google **não** tinha relação com a assinatura: ver "Login do Google" em Funcionalidades.) O Mercurio não tem proteção contra sites de golpe/malware do Google (Safe Browsing), que o Electron não inclui.
 - **Aviso de direitos por instalação:** usa a data do executável como identificador, porque `%APPDATA%` sobrevive à reinstalação.
 - **Instalador Windows de um clique (NSIS), sem assinatura digital:** o Windows mostra "O Windows protegeu o computador" → *Mais informações → Executar assim mesmo*.
 - **Mac sem certificado Apple:** o macOS bloqueia na 1ª vez → botão direito → *Abrir*, ou `xattr -cr /Applications/Mercurio.app`.
@@ -151,8 +159,9 @@ Já estava certo: downloads recebem a marca "baixado da internet" do Windows (`Z
 - [x] **Testar a segurança** do navegador: auditoria + correções na v0.3.0 (ver "Auditoria de segurança")
 - [ ] **Certificado de assinatura de código** (Windows; Apple depois). Almir só publica com ele. Opções levantadas em 21/11/2026: 1) Microsoft Store (a Microsoft assina o app; conta individual grátis, empresa ~US$ 99 uma vez; conferir a política para navegadores; electron-builder gera `appx`) — ficou de eu preparar o pacote para teste; 2) Trusted/Artifact Signing da Microsoft (~US$ 10/mês; conferir se já atende o Brasil); 3) Certum/Sectigo (US$ 100–400/ano). Mac: Apple Developer US$ 99/ano. Certificados grátis (SignPath, Certum Open Source) são só para código aberto
 - [ ] **Atualizar instaladores de Mac e Linux** (em `dist` ainda estão na 0.1.0; Windows já está na 0.3.10). Rodar o GitHub Actions manualmente (Actions → Build → Run workflow, sem tag para não publicar em Releases), baixar os Artifacts e colocar em `dist\mac` e `dist\linux`
-- [ ] **Limpar `dist\windows`:** apagar os instaladores de teste 0.2.0 a 0.3.0 e o `builder-debug.yml`, deixando só o mais novo (+ `.blockmap` e `latest.yml`)
+- [ ] **Limpar `dist\windows`:** apagar os instaladores de teste 0.2.0 a 0.3.9 e o `builder-debug.yml`, deixando só o mais novo (+ `.blockmap` e `latest.yml`)
 - [ ] **Planejar o site de distribuição** (agenda de 21/11/2026). (A doação já funciona dentro do app, por Pix; uma página de doação no site é opcional.) Com o repositório privado, os Releases do GitHub deixam de ser públicos
 - [ ] Tornar o repositório privado (Almir vai fazer)
 - [x] Release v0.1.0 publicada com os 8 instaladores: https://github.com/AlmirAlmeida-bit/mercurio/releases/tag/v0.1.0
+- [ ] **Confirmar o login do Google com uma conta real** (senha + verificação em duas etapas) na 0.3.10 — Almir vai testar
 - [ ] Ideias em aberto: "Fixar extensão na barra"; compartilhamento de tela (Meet); definir o Mercurio como navegador padrão; certificados de assinatura (Windows e Apple)
