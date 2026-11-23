@@ -1,7 +1,7 @@
 {
   "name": "mercurio",
   "productName": "Mercurio",
-  "version": "0.3.9",
+  "version": "0.3.10",
   "description": "Navegador rápido, seguro e compatível com extensões Chrome",
   "author": {
     "name": "TresTech",
@@ -37,6 +37,7 @@
       "panel.html",
       "panel.js",
       "panel-preload.js",
+      "tab-preload.js",
       "audit.html",
       "audit.js",
       "offline.html",

@@ -85,6 +85,12 @@ const BMBAR = 32;  // barra de favoritos, quando visível
 // Testado em 22/11/2026: nem "Mercurio/x" no FINAL (como o "Edg/" do Edge) passa; o WhatsApp só aceita navegadores
 // que conhece. Para contar usuários, usar os acessos ao latest.yml da atualização automática (memoria.md).
 app.userAgentFallback = app.userAgentFallback.replace(/ (Mercurio|mercurio|Electron)\/\S+/g, '');
+// O Google recusa login em navegadores Electron ("Este navegador ou app pode não ser seguro"): confere se a marca
+// "Google Chrome" está nos client hints e se window.chrome está completo. Só na página de login o Mercurio completa essa
+// identidade (cabeçalhos aqui; window.chrome e navigator.userAgentData em tab-preload.js). Testado em 23/11/2026.
+// ponytail: depende da detecção atual do Google; se voltar a bloquear, comparar com o Chrome (scripts/seguranca).
+const CHROME_MAJOR = process.versions.chrome.split('.')[0];
+const LOGIN_BRANDS = `"Google Chrome";v="${CHROME_MAJOR}", "Chromium";v="${CHROME_MAJOR}", "Not-A.Brand";v="99"`;
 
 // Páginas internas em mercurio://app/ (e não file://): sites não conseguem abri-las, extensões com acesso a
 // arquivos não as alcançam e só os arquivos desta lista são servidos.
@@ -319,6 +325,12 @@ function secure(s, decisions) {
   ctxs.harden(s, { decisions, onAsk, onBlocked, serve });
   trackDownloads(s);
   s.setSpellCheckerEnabled(false); // sem dicionários na memória (o Mercurio não oferece correção)
+  s.webRequest.onBeforeSendHeaders({ urls: ['https://accounts.google.com/*'] }, (d, cb) => {
+    const h = d.requestHeaders;
+    for (const k of Object.keys(h)) if (/^sec-ch-ua(-full-version-list)?$/i.test(k)) delete h[k];
+    h['sec-ch-ua'] = LOGIN_BRANDS;
+    cb({ requestHeaders: h });
+  });
 }
 
 // ---- atualização automática ----
@@ -440,7 +452,7 @@ function newTab(url, { at } = {}) {
       nodeIntegration: false,
       spellcheck: false, // o Mercurio não oferece correção: não carregar dicionários
       // só as páginas internas (painel, auditoria) recebem a ponte com o navegador
-      preload: internal ? path.join(__dirname, 'panel-preload.js') : undefined,
+      preload: path.join(__dirname, internal ? 'panel-preload.js' : 'tab-preload.js'),
     },
   });
   view.ctx = owner;
