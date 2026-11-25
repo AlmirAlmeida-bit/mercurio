@@ -4,4 +4,6 @@ contextBridge.exposeInMainWorld('mercurio', {
   cmd: (name, arg) => ipcRenderer.send('cmd', name, arg),
   onState: fn => ipcRenderer.on('state', (_, s) => fn(s)),
   onFocusUrl: fn => ipcRenderer.on('focus-url', () => fn()),
+  onSuggest: fn => ipcRenderer.on('suggest', (_, list) => fn(list)),
+  onSuggestPicked: fn => ipcRenderer.on('suggest-picked', () => fn()),
 });

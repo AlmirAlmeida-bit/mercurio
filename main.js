@@ -74,6 +74,7 @@ const capsules = require('./lib/capsules');
 const { hasInternet, NETWORK_ERRORS } = require('./lib/connectivity');
 const { displayHost } = require('./lib/hosts');
 const donate = require('./lib/donate');
+const { suggest } = require('./lib/suggest');
 const { autoUpdater } = require('electron-updater');
 
 const BAR = 80;    // abas (40) + endereço (40)
@@ -96,7 +97,7 @@ const LOGIN_BRANDS = `"Google Chrome";v="${CHROME_MAJOR}", "Chromium";v="${CHROM
 // arquivos não as alcançam e só os arquivos desta lista são servidos.
 protocol.registerSchemesAsPrivileged([{ scheme: 'mercurio', privileges: { standard: true, secure: true } }]);
 const SERVED = new Set(['ui.html', 'ui.js', 'home.html', 'home.js', 'accent.js', 'panel.html', 'panel.js', 'audit.html', 'audit.js',
-  'offline.html', 'offline.js', 'aviso.html', 'aviso.js', 'apoiar.html', 'apoiar.js', 'pix-dados.js', 'assets/logo.png', 'assets/pix.png',
+  'offline.html', 'offline.js', 'aviso.html', 'aviso.js', 'apoiar.html', 'apoiar.js', 'pix-dados.js', 'suggest.html', 'suggest.js', 'assets/logo.png', 'assets/pix.png',
   'THIRD-PARTY-NOTICES.txt']);
 function serve(req) {
   const { host, pathname } = new URL(req.url);
@@ -288,12 +289,91 @@ function downloadState() {
   let got = 0, total = 0;
   for (const d of downloads) { got += d.getReceivedBytes(); total += d.getTotalBytes(); }
   // total 0 = o site não informou o tamanho: a barra fica "indeterminada"
-  return { active: downloads.size, progress: total > 0 ? got / total : null, doneAt: lastDownload?.at ?? 0 };
+  const paused = downloads.size > 0 && [...downloads].every(d => d.isPaused());
+  return { active: downloads.size, paused, progress: total > 0 ? got / total : null, doneAt: lastDownload?.at ?? 0 };
 }
 
 function openDownloads() {
   if (lastDownload && fs.existsSync(lastDownload.file)) shell.showItemInFolder(lastDownload.file); // abre a pasta com o arquivo selecionado
   else shell.openPath(downloadsDir());
+}
+
+const menuAt = (items, pos) => {
+  const x = Number(pos?.x), y = Number(pos?.y);
+  Menu.buildFromTemplate(items).popup({ window: win, x: Number.isFinite(x) ? Math.round(x) : 0, y: Number.isFinite(y) ? Math.round(y) : 80 });
+};
+
+// Botão de downloads: sem nada baixando abre a pasta; baixando, mostra Pausar/Retomar e Cancelar de cada arquivo.
+function downloadsMenu(pos) {
+  if (!downloads.size) return openDownloads();
+  const items = [...downloads].flatMap(d => {
+    const total = d.getTotalBytes();
+    const pct = total ? ` — ${Math.round((d.getReceivedBytes() / total) * 100)}%` : '';
+    return [
+      { label: `${path.basename(d.getSavePath())}${d.isPaused() ? ' — pausado' : pct}`, enabled: false },
+      d.isPaused() ? { label: 'Retomar', click: () => { d.resume(); syncSoon(); } } : { label: 'Pausar', click: () => { d.pause(); syncSoon(); } },
+      { label: 'Cancelar', click: () => d.cancel() }, // o Chromium apaga o arquivo incompleto
+      { type: 'separator' },
+    ];
+  });
+  menuAt([...items, { label: 'Abrir a pasta de downloads', click: openDownloads }], pos);
+}
+
+// ---- extensões: ativar/desativar pelo botão da barra de endereço ----
+// O Electron não tem "desativar": a extensão é descarregada (arquivos ficam no disco) e o caminho fica em
+// data.disabledExt para carregar de novo. Desativada não recebe atualização até ser ativada.
+const sesExt = () => ses.extensions ?? ses;
+async function setExtensionEnabled(id, on) {
+  data.disabledExt ??= {};
+  if (on) {
+    const d = data.disabledExt[id];
+    if (!d) return;
+    delete data.disabledExt[id]; save();
+    try {
+      const x = await sesExt().loadExtension(d.path);
+      if (x.manifest.manifest_version === 3 && x.manifest.background?.service_worker)
+        await ses.serviceWorkers.startWorkerForScope(`chrome-extension://${x.id}`).catch(() => {});
+    } catch (e) { console.error('não foi possível ativar a extensão', id, e); }
+    return;
+  }
+  const x = sesExt().getExtension(id);
+  if (!x) return;
+  data.disabledExt[id] = { name: extMsg(x, x.name), path: x.path }; save();
+  sesExt().removeExtension(id);
+}
+function extensionsMenu(pos) {
+  const on = sesExt().getAllExtensions().map(x => ({ id: x.id, name: extMsg(x, x.name), on: true }));
+  const off = Object.entries(data.disabledExt ?? {}).map(([id, d]) => ({ id, name: d.name, on: false }));
+  const all = [...on, ...off].sort((a, b) => a.name.localeCompare(b.name));
+  menuAt([
+    ...(all.length ? all.map(x => ({ label: x.name, type: 'checkbox', checked: x.on, click: () => setExtensionEnabled(x.id, !x.on) }))
+      : [{ label: 'Nenhuma extensão instalada', enabled: false }]),
+    { type: 'separator' },
+    { label: 'Gerenciar extensões', click: () => openPanel('extensoes') },
+    { label: 'Adicionar da Chrome Web Store', click: () => { switchContext(main); newTab(STORE); } },
+  ], pos);
+}
+
+// ---- sugestões da barra de endereço (histórico + favoritos) ----
+// A lista é uma camada própria (suggest.html) por cima da página, logo abaixo da barra.
+let suggestView = null, suggestItems = [], suggestQ = '', suggestRect = null;
+function suggestCmd({ q, rect, sel = -1 } = {}) {
+  if (typeof q === 'string') {
+    suggestQ = q.slice(0, 300);
+    suggestItems = suggest(suggestQ, data.history, data.bookmarks);
+    win.webContents.send('suggest', suggestItems); // a barra completa o endereço e navega com as setas
+  }
+  if (rect) suggestRect = rect;
+  if (!suggestItems.length || !suggestRect) return hideSuggest();
+  const n = v => Math.max(0, Math.round(Number(v) || 0));
+  suggestView.setBounds({ x: n(suggestRect.x), y: n(suggestRect.y), width: Math.max(240, n(suggestRect.width)), height: suggestItems.length * 32 + 8 });
+  suggestView.webContents.send('suggest', { items: suggestItems, sel: Number(sel), q: suggestQ, accent: data.prefs.accent });
+  win.contentView.addChildView(suggestView); // de novo = vai para cima das abas
+  suggestView.setVisible(true);
+}
+function hideSuggest() {
+  suggestItems = [];
+  suggestView?.setVisible(false);
 }
 
 // Política de segurança + downloads para cada sessão (Principal, cápsula, efêmera).
@@ -317,8 +397,7 @@ function popupsMenu(pos) {
     },
     { label: 'Continuar bloqueando', click: clear },
   ];
-  const x = Number(pos?.x), y = Number(pos?.y);
-  Menu.buildFromTemplate(items).popup({ window: win, x: Number.isFinite(x) ? Math.round(x) : 0, y: Number.isFinite(y) ? Math.round(y) : 80 });
+  menuAt(items, pos);
 }
 
 function secure(s, decisions) {
@@ -414,6 +493,7 @@ function sleepIdleTabs() {
 }
 
 function select(i) {
+  hideSuggest();
   if (tabs[active] && active !== i) tabs[active].lastSeen = Date.now(); // a que sai de vista começa a contar
   if (tabs[i]?.sleep) wake(i);
   active = ctx.active = i;
@@ -804,6 +884,7 @@ const commands = {
     if (/^mercurio:\/\/(painel|settings)/i.test(s)) return openPanel();
     if (/^mercurio:\/\/auditoria/i.test(s)) return openAudit();
     if (/^mercurio:\/\/apoiar/i.test(s)) return openApoiar();
+    hideSuggest();
     const url = toUrl(s, data.prefs.search);
     isInternal(cur()?.getURL()) ? newTab(url) : cur()?.loadURL(url);
   },
@@ -813,7 +894,10 @@ const commands = {
   home: () => commands.go(SITE),
   newTab: () => newTab(),
   panel: () => openPanel(),
-  downloads: openDownloads,
+  downloads: pos => downloadsMenu(pos),
+  extensions: pos => extensionsMenu(pos),
+  suggest: a => suggestCmd(a),
+  suggestHide: () => hideSuggest(),
   contexts: pos => contextsMenu(pos),
   ephemeral: openEphemeral,
   endEphemeral: () => endEphemeral(),
@@ -866,6 +950,11 @@ function extIcon(ext) {
   const img = nativeImage.createFromPath(path.join(ext.path, icons[size]));
   return img.isEmpty() ? null : img.resize({ width: 48, quality: 'best' }).toDataURL();
 }
+
+// Página do popup (MV3 action, MV2 browser_action) ou de opções declarada no manifest.
+const extPage = (x, kind) => kind === 'popup'
+  ? (x.manifest.action ?? x.manifest.browser_action)?.default_popup
+  : x.manifest.options_ui?.page ?? x.manifest.options_page;
 
 // ---- importar favoritos (Chrome, Edge, Brave, Vivaldi, Opera… e arquivo exportado) ----
 // Formatos em lib/bookmarks.js. Em PCs de empresa os favoritos costumam estar fora do lugar padrão: pasta definida
@@ -1008,7 +1097,10 @@ function panelData() {
       version: x.version,
       description: extMsg(x, x.manifest.description),
       icon: extIcon(x),
-    })),
+      popup: !!extPage(x, 'popup'),
+      options: !!extPage(x, 'options'),
+      on: true,
+    })).concat(Object.entries(data.disabledExt ?? {}).map(([id, x]) => ({ id, name: x.name, version: '', description: 'Desativada', on: false }))),
     capsules: caps.map(c => {
       const live = contexts.get(c.id);
       return {
@@ -1061,7 +1153,19 @@ const panelActions = {
   },
   resetDownloads: () => { data.prefs.downloadsDir = ''; save(); },
   openDownloads: () => shell.openPath(downloadsDir()),
-  uninstall: id => uninstallExtension(String(id), { session: ses }),
+  uninstall: async id => {
+    await uninstallExtension(String(id), { session: ses });
+    if (data.disabledExt?.[id]) { delete data.disabledExt[id]; save(); }
+  },
+  toggleExtension: ({ id, on } = {}) => setExtensionEnabled(String(id), on === true),
+  // ponytail: popup vira aba (não há ícones de extensão na barra); o caminho vem do manifest, nunca do painel
+  openExtension: ({ id, page } = {}) => {
+    const x = (ses.extensions ?? ses).getExtension(String(id));
+    const p = x && extPage(x, page === 'options' ? 'options' : 'popup');
+    if (!p) return;
+    switchContext(main);
+    newTab(`chrome-extension://${x.id}/${p.replace(/^\/+/, '')}`);
+  },
   clearData: async () => { await ses.clearStorageData(); await ses.clearCache(); },
   store: () => newTab(STORE),
   notices: () => newTab(NOTICES),
@@ -1200,6 +1304,8 @@ async function setupExtensions() {
       return { action: response === 1 ? 'allow' : 'deny' };
     },
   });
+  // desativadas pelo botão da barra continuam desativadas depois de reabrir (a loja carrega todas ao iniciar)
+  for (const id of Object.keys(data.disabledExt ?? {})) if (sesExt().getExtension(id)) sesExt().removeExtension(id);
 }
 
 const theme = () => nativeTheme.shouldUseDarkColors
@@ -1284,7 +1390,18 @@ app.whenReady().then(async () => {
   win.webContents.on('will-navigate', e => e.preventDefault()); // UI nunca sai do ui.html
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   shortcuts(win.webContents);
-  win.on('resize', layout);
+  win.on('resize', () => { hideSuggest(); layout(); });
+  suggestView = new WebContentsView({
+    webPreferences: { preload: path.join(__dirname, 'suggest-preload.js'), sandbox: true, contextIsolation: true, nodeIntegration: false },
+  });
+  suggestView.setVisible(false);
+  suggestView.webContents.loadURL(page('suggest.html'));
+  suggestView.webContents.on('will-navigate', e => e.preventDefault());
+  ipcMain.on('suggest-pick', (e, i) => {
+    if (e.sender !== suggestView.webContents) return;
+    const s = suggestItems[Number(i)];
+    if (s) { commands.go(s.url); win.webContents.send('suggest-picked'); }
+  });
   nativeTheme.on('updated', () => win.setTitleBarOverlay(theme()));
 
   ipcMain.on('cmd', (e, name, arg) => {

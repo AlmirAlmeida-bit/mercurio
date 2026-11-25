@@ -1,7 +1,7 @@
 {
   "name": "mercurio",
   "productName": "Mercurio",
-  "version": "0.3.10",
+  "version": "0.4.0",
   "description": "Navegador rápido, seguro e compatível com extensões Chrome",
   "author": {
     "name": "TresTech",
@@ -12,7 +12,7 @@
   "desktopName": "mercurio.desktop",
   "scripts": {
     "start": "electron .",
-    "test": "node url.js && node lib/snapshots.test.js && node lib/connectivity.js && node lib/hosts.js && node lib/donate.js && node lib/bookmarks.js",
+    "test": "node url.js && node lib/snapshots.test.js && node lib/connectivity.js && node lib/hosts.js && node lib/donate.js && node lib/bookmarks.js && node lib/suggest.js",
     "icon": "electron scripts/icon.js",
     "notices": "node scripts/notices.js",
     "pix": "node scripts/pix.js",
@@ -37,6 +37,9 @@
       "panel.html",
       "panel.js",
       "panel-preload.js",
+      "suggest-preload.js",
+      "suggest.html",
+      "suggest.js",
       "tab-preload.js",
       "audit.html",
       "audit.js",

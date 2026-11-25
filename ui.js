@@ -1,9 +1,13 @@
-const { cmd, onState, onFocusUrl } = window.mercurio;
+const { cmd, onState, onFocusUrl, onSuggest, onSuggestPicked } = window.mercurio;
 const $ = id => document.getElementById(id);
 const url = $('url');
 const X = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>'; // ícone estático, nunca dado de página
 
-for (const id of ['back', 'forward', 'reload', 'home', 'panel', 'downloads']) $(id).onclick = () => cmd(id);
+for (const id of ['back', 'forward', 'reload', 'home', 'panel']) $(id).onclick = () => cmd(id);
+// botões que abrem menu logo abaixo deles
+const below = id => { const r = $(id).getBoundingClientRect(); return { x: r.left, y: r.bottom + 4 }; };
+$('downloads').onclick = () => cmd('downloads', below('downloads'));
+$('exts').onclick = e => { e.preventDefault(); cmd('extensions', below('exts')); }; // dentro do <label>: não focar o campo
 
 // Botão de downloads: animação enquanto baixa e um brilho quando termina.
 let seenDone = null;
@@ -12,9 +16,10 @@ function renderDownloads(d) {
   const busy = d.active > 0;
   b.classList.toggle('busy', busy);
   b.classList.toggle('indet', busy && d.progress == null);
+  b.classList.toggle('paused', busy && d.paused);
   b.style.setProperty('--p', `${Math.round((d.progress ?? 0) * 100)}%`);
   b.title = busy
-    ? `Baixando ${d.active} arquivo${d.active > 1 ? 's' : ''}${d.progress != null ? ` — ${Math.round(d.progress * 100)}%` : ''}`
+    ? `${d.paused ? 'Pausado' : 'Baixando'} ${d.active} arquivo${d.active > 1 ? 's' : ''}${d.progress != null ? ` — ${Math.round(d.progress * 100)}%` : ''}. Clique para pausar ou cancelar`
     : 'Downloads: abrir a pasta';
   if (seenDone !== null && d.doneAt > seenDone && !busy) {
     b.classList.remove('done'); void b.offsetWidth; b.classList.add('done'); // reinicia o brilho
@@ -31,11 +36,44 @@ $('popups').onclick = e => {
 $('plus').onclick = () => cmd('newTab');
 $('allow').onclick = () => cmd('permission', true);
 $('deny').onclick = () => cmd('permission', false);
+// Autocompletar: sugestões do histórico/favoritos sob a barra (setas escolhem) e o endereço mais provável
+// completado no próprio campo, com o resto selecionado (como no Chrome).
+let suggestions = [], sel = -1, typed = '', completing = false;
+const barRect = () => { const r = $('bar').getBoundingClientRect(); return { x: r.left, y: r.bottom + 2, width: r.width }; };
+const closeSuggest = () => { suggestions = []; sel = -1; cmd('suggestHide'); };
+url.oninput = e => {
+  typed = url.value;
+  completing = e.inputType === 'insertText'; // apagando não completa de novo
+  sel = -1;
+  cmd('suggest', { q: typed, rect: barRect() });
+};
+onSuggest(list => {
+  if (document.activeElement !== url) return closeSuggest();
+  suggestions = list;
+  const top = list[0];
+  if (completing && top?.prefix && typed && url.value === typed && top.text.toLowerCase().startsWith(typed.toLowerCase())) {
+    url.value = typed + top.text.slice(typed.length);
+    url.setSelectionRange(typed.length, url.value.length);
+  }
+});
+onSuggestPicked(() => { closeSuggest(); url.blur(); });
 url.onkeydown = e => {
-  if (e.key === 'Enter' && url.value.trim()) { cmd('go', url.value); url.blur(); }
-  if (e.key === 'Escape') url.blur();
+  if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && suggestions.length) {
+    e.preventDefault();
+    const n = suggestions.length; // percorre -1 (o que foi digitado), 0 … n-1
+    sel = ((sel + 1 + (e.key === 'ArrowDown' ? 1 : -1) + n + 1) % (n + 1)) - 1;
+    url.value = sel >= 0 ? suggestions[sel].text : typed;
+    cmd('suggest', { sel });
+  }
+  if (e.key === 'Enter' && url.value.trim()) {
+    cmd('go', sel >= 0 ? suggestions[sel].url : url.value);
+    closeSuggest(); url.blur();
+  }
+  if (e.key === 'Escape') { if (suggestions.length) { closeSuggest(); url.value = typed; } else url.blur(); }
+  if (e.key === 'Delete' || e.key === 'Backspace') completing = false;
 };
 url.onfocus = () => url.select();
+url.onblur = () => setTimeout(closeSuggest, 150); // dá tempo do clique na lista chegar
 onFocusUrl(() => url.focus());
 
 // Barra de favoritos: clique abre aqui, botão do meio abre em nova aba, direito = menu.

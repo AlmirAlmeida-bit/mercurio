@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
+<title>Sugestões</title>
+<style>
+  :root { --bg: #1b1c21; --line: #26282e; --fg: #e8e9ec; --dim: #80838d; --hover: #ffffff0f; }
+  @media (prefers-color-scheme: light) { :root { --bg: #f7f8fa; --line: #d3d6dc; --fg: #1a1b1f; --dim: #6b6f78; --hover: #0000000d; } }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; user-select: none; }
+  body { background: var(--bg); color: var(--fg); border-radius: 2px; box-shadow: inset 0 0 0 1px var(--line);
+         padding: 4px; font: 12.5px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; }
+  .row { display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: 2px; cursor: pointer; }
+  .row:hover { background: var(--hover); }
+  .row.on { background: var(--hover); box-shadow: inset 2px 0 0 var(--accent, var(--fg)); }
+  .row svg { width: 13px; height: 13px; flex: none; fill: none; stroke: var(--dim); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .u { flex: none; max-width: 60%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; }
+  .u b { color: var(--accent, var(--fg)); font-weight: 600; }
+  .t { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--dim); }
+</style>
+</head>
+<body>
+  <div id="list" role="listbox" aria-label="Sugestões do histórico"></div>
+  <script src="accent.js"></script>
+  <script src="suggest.js"></script>
+</body>
+</html>

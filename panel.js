@@ -27,6 +27,19 @@ const host = u => { try { return new URL(u).host; } catch { return u; } };
 const match = (...s) => !q || s.some(v => v?.toLowerCase().includes(q));
 const act = async (name, arg) => { d = await call(name, arg); list?.(); };
 
+// Lista de extensões (página Extensões e Preferências). "Abrir" mostra o popup da extensão numa aba.
+function extList() {
+  return h('div', { class: 'list' }, d.extensions.length
+    ? d.extensions.map(x => h('div', { class: 'row' },
+        h('div', { class: 'ico' }, x.icon ? h('img', { src: x.icon, alt: '' }) : null),
+        h('div', { class: 'main' }, h('div', { class: 't' }, x.name), h('div', { class: 'u' }, x.on ? `Versão ${x.version}${x.description ? ' · ' + x.description : ''}` : 'Desativada')),
+        h('button', { class: 'act', onclick: () => act('toggleExtension', { id: x.id, on: !x.on }) }, x.on ? 'Desativar' : 'Ativar'),
+        x.popup ? h('button', { class: 'act', onclick: () => call('openExtension', { id: x.id, page: 'popup' }) }, 'Abrir') : null,
+        x.options ? h('button', { class: 'act', onclick: () => call('openExtension', { id: x.id, page: 'options' }) }, 'Opções') : null,
+        h('button', { class: 'act', onclick: () => confirm(`Remover "${x.name}"?`) && act('uninstall', x.id) }, 'Remover')))
+    : h('div', { class: 'empty' }, 'Nenhuma extensão instalada. Use Extensões → Adicionar da Chrome Web Store.'));
+}
+
 function searchBox(placeholder) {
   return h('input', { class: 'search', type: 'search', placeholder, 'aria-label': placeholder, value: q,
     oninput: e => { q = e.target.value.trim().toLowerCase(); limit = 200; list(); } });
@@ -81,14 +94,7 @@ const sections = {
 
   extensoes() {
     const box = h('div');
-    list = () => {
-      box.replaceChildren(h('div', { class: 'list' }, d.extensions.length
-        ? d.extensions.map(x => h('div', { class: 'row' },
-            h('div', { class: 'ico' }, x.icon ? h('img', { src: x.icon, alt: '' }) : null),
-            h('div', { class: 'main' }, h('div', { class: 't' }, x.name), h('div', { class: 'u' }, `Versão ${x.version}${x.description ? ' · ' + x.description : ''}`)),
-            h('button', { class: 'act', onclick: () => confirm(`Remover "${x.name}"?`) && act('uninstall', x.id) }, 'Remover')))
-        : h('div', { class: 'empty' }, 'Nenhuma extensão instalada.')));
-    };
+    list = () => box.replaceChildren(extList());
     return [h('h1', {}, 'Extensões'), h('p', { class: 'sub' }, 'Extensões da Chrome Web Store funcionam no Mercurio.'),
       h('div', { class: 'tools' }, h('button', { class: 'btn primary', onclick: () => call('store') }, 'Adicionar da Chrome Web Store')),
       box];
@@ -151,8 +157,10 @@ const sections = {
     const seg = (key, options) => h('div', { class: 'seg', role: 'group' }, Object.entries(options).map(([value, label]) =>
       h('button', { 'aria-pressed': String(d.prefs[key]) === value, onclick: async () => { d = await call('setPref', { key, value }); render(); } }, label)));
     const perms = h('div');
+    const exts = h('div');
     const done = h('span', { class: 'ok' });
     list = () => {
+      exts.replaceChildren(extList());
       perms.replaceChildren(h('div', { class: 'list' }, d.permissions.length
         ? d.permissions.map(p => h('div', { class: 'row' },
             h('div', { class: 'main' }, h('div', { class: 't' }, host(p.origin)),
@@ -179,6 +187,7 @@ const sections = {
           seg('snapshotsMax', { 10: '10', 20: '20', 50: '50', 100: '100' })),
         h('div', { class: 'setting' }, h('div', {}, 'Tema'), seg('theme', { system: 'Sistema', dark: 'Escuro', light: 'Claro' })),
         h('div', { class: 'setting' }, h('div', {}, 'Cor de destaque', h('p', {}, 'Abas, botões, estrela e foco.')), swatches())),
+      h('h2', {}, 'Extensões instaladas'), exts,
       h('h2', {}, 'Importar favoritos'), importBox(),
       h('h2', {}, 'Permissões dos sites'), perms,
       h('h2', {}, 'Privacidade'),
