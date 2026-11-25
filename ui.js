@@ -7,7 +7,11 @@ for (const id of ['back', 'forward', 'reload', 'home', 'panel']) $(id).onclick =
 // botões que abrem menu logo abaixo deles
 const below = id => { const r = $(id).getBoundingClientRect(); return { x: r.left, y: r.bottom + 4 }; };
 $('downloads').onclick = () => cmd('downloads', below('downloads'));
-$('exts').onclick = e => { e.preventDefault(); cmd('extensions', below('exts')); }; // dentro do <label>: não focar o campo
+$('exts').onclick = e => {
+  e.preventDefault();
+  const r = $('exts').getBoundingClientRect();
+  cmd('extensions', { ...below('exts'), rect: { x: r.left, y: r.top, width: r.width, height: r.height } }); // rect: onde prender o popup
+}; // dentro do <label>: não focar o campo
 
 // Botão de downloads: animação enquanto baixa e um brilho quando termina.
 let seenDone = null;

@@ -341,13 +341,33 @@ async function setExtensionEnabled(id, on) {
   data.disabledExt[id] = { name: extMsg(x, x.name), path: x.path }; save();
   sesExt().removeExtension(id);
 }
+// Abre o popup da extensão preso ao botão (janela sem moldura logo abaixo, como no Chrome) e ligado à aba atual,
+// para a extensão agir na página (ex.: conta-gotas do ColorZilla). Sem popup, dispara action.onClicked.
+// ponytail: usa activateClick, interno da electron-chrome-extensions; se sumir numa atualização, cai na aba antiga
+function openExtensionAction(id, anchor) {
+  const ba = extensions?.api?.browserAction;
+  const wc = cur();
+  if (typeof ba?.activateClick !== 'function' || ctx !== main || !wc || !isWeb(wc.getURL())) {
+    return panelActions.openExtension({ id, page: 'popup' });
+  }
+  const n = v => Math.round(Number(v) || 0);
+  ba.activateClick({ extensionId: id, tabId: wc.id, anchorRect: { x: n(anchor?.x), y: n(anchor?.y), width: n(anchor?.width) || 24, height: n(anchor?.height) || 24 } });
+}
+
 function extensionsMenu(pos) {
-  const on = sesExt().getAllExtensions().map(x => ({ id: x.id, name: extMsg(x, x.name), on: true }));
+  const loaded = sesExt().getAllExtensions();
+  const on = loaded.map(x => ({ id: x.id, name: extMsg(x, x.name), on: true }));
   const off = Object.entries(data.disabledExt ?? {}).map(([id, d]) => ({ id, name: d.name, on: false }));
   const all = [...on, ...off].sort((a, b) => a.name.localeCompare(b.name));
+  const icon = x => { try { const s = extIcon(x); return s ? nativeImage.createFromDataURL(s).resize({ width: 16, quality: 'best' }) : undefined; } catch { return undefined; } };
+  const pageOk = ctx === main && isWeb(cur()?.getURL());
   menuAt([
-    ...(all.length ? all.map(x => ({ label: x.name, type: 'checkbox', checked: x.on, click: () => setExtensionEnabled(x.id, !x.on) }))
-      : [{ label: 'Nenhuma extensão instalada', enabled: false }]),
+    ...(loaded.length ? loaded.map(x => ({ label: extMsg(x, x.name), icon: icon(x), enabled: pageOk, click: () => openExtensionAction(x.id, pos?.rect) }))
+      .sort((a, b) => a.label.localeCompare(b.label)) : []),
+    ...(loaded.length && !pageOk ? [{ label: ctx === main ? 'Abra um site para usar as extensões' : 'Extensões só funcionam no Principal', enabled: false }] : []),
+    ...(loaded.length ? [{ type: 'separator' }] : []),
+    all.length ? { label: 'Ativar ou desativar', submenu: all.map(x => ({ label: x.name, type: 'checkbox', checked: x.on, click: () => setExtensionEnabled(x.id, !x.on) })) }
+      : { label: 'Nenhuma extensão instalada', enabled: false },
     { type: 'separator' },
     { label: 'Gerenciar extensões', click: () => openPanel('extensoes') },
     { label: 'Adicionar da Chrome Web Store', click: () => { switchContext(main); newTab(STORE); } },
